@@ -242,29 +242,21 @@ h1 {
 .status {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 13px;
-  border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--ink-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
+  justify-content: center;
+  padding: 8px;
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--success);
   animation: pulseDot 2.2s infinite;
 }
 
 .status-error {
-  border-color: #fecaca;
-  background: var(--danger-soft);
-  color: var(--danger);
+  border: 0;
+  background: transparent;
 }
 
 .status-error .status-dot {

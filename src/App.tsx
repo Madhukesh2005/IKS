@@ -953,8 +953,13 @@ function Home({
               Type an equation, paste a <em>Lilavati</em> riddle, or drop a photo of handwritten math.
             </p>
           </div>
-          <span className={`status ${error ? 'status-error' : ''}`}>
-            <span className="status-dot" /> {error ? 'Service issue' : 'Groq AI ready'}
+          <span
+            className={`status ${error ? 'status-error' : ''}`}
+            role="status"
+            aria-label={error ? 'AI service unavailable' : 'AI service ready'}
+            title={error ? 'AI service unavailable' : 'AI service ready'}
+          >
+            <span className="status-dot" />
           </span>
         </div>
 
