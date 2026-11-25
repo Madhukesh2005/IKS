@@ -87,14 +87,19 @@ export function useMagnetic(maxPull = 5) {
 
 export function useScrambleValue(target: string | number | null) {
   const finalValue = target === null ? '' : String(target);
-  const [displayValue, setDisplayValue] = useState(finalValue);
+  const [animState, setAnimState] = useState<{ target: string; text: string }>({
+    target: finalValue,
+    text: finalValue,
+  });
 
   useEffect(() => {
     if (
       window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
       finalValue.length > 24 ||
       !/\d/.test(finalValue)
-    ) return;
+    ) {
+      return;
+    }
 
     let frame = 0;
     let startTime = 0;
@@ -104,11 +109,14 @@ export function useScrambleValue(target: string | number | null) {
       if (!startTime) startTime = time;
       const progress = Math.min(1, (time - startTime) / 260);
       const locked = Math.floor(progress * finalValue.length);
-      const scrambled = finalValue.split('').map((char, index) => {
-        if (!/\d/.test(char) || index < locked) return char;
-        return String(Math.floor(Math.random() * 10));
-      }).join('');
-      setDisplayValue(progress === 1 ? finalValue : scrambled);
+      const scrambled = finalValue
+        .split('')
+        .map((char, index) => {
+          if (!/\d/.test(char) || index < locked) return char;
+          return String(Math.floor(Math.random() * 10));
+        })
+        .join('');
+      setAnimState({ target: finalValue, text: progress === 1 ? finalValue : scrambled });
       if (progress < 1) frame = requestAnimationFrame(animate);
     };
     frame = requestAnimationFrame(animate);
@@ -118,9 +126,10 @@ export function useScrambleValue(target: string | number | null) {
     };
   }, [finalValue]);
 
-  const reducedMotion = typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  return reducedMotion || finalValue.length > 24 || !/\d/.test(finalValue)
-    ? finalValue
-    : displayValue;
+  const reducedMotion =
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reducedMotion || finalValue.length > 24 || !/\d/.test(finalValue)) {
+    return finalValue;
+  }
+  return animState.target === finalValue ? animState.text : finalValue;
 }

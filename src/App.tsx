@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
   BookOpen,
   BrainCircuit,
   Calculator,
+  Camera,
   Check,
   ChevronRight,
   CircleHelp,
@@ -16,10 +17,18 @@ import {
   ImagePlus,
   Landmark,
   Menu,
+  Moon,
+  Pause,
+  Play,
   RefreshCw,
+  RotateCcw,
+  RotateCw,
   Search,
   ShieldCheck,
+  Shuffle,
   Sparkles,
+  SkipForward,
+  Sun,
   Trophy,
   Upload,
   Volume2,
@@ -28,22 +37,28 @@ import {
   Zap,
 } from 'lucide-react';
 import './App.css';
+import CommandPalette, { type PaletteTab } from './components/CommandPalette';
 import OpticalStage from './components/OpticalStage';
+import SutraDiagram from './components/SutraDiagram';
 import { isSfxEnabled, playClick, playError, playHoverTick, playSolveChime, playSuccess, playToggle, setSfxEnabled } from './utils/sfx';
 import { spawnRipple, useMagnetic, useScrambleValue, useSpotlightSurface } from './utils/physics';
 import {
   cubeRoot,
   ekadhikenaSquare,
   ekanyunena,
-  kaprekar,
-  katapayadi,
+  kaprekarDetailed,
+  katapayadiDetailed,
   nikhilam,
   pickBase,
+  puranapuranabhyam,
+  sankalanaSymmetric,
   urdhva,
+  yaavadunam,
   type Step,
 } from './math';
 
-type Tab = 'snap' | 'sutras' | 'scriptures' | 'quiz';
+type Tab = PaletteTab;
+type SutraCategory = 'All' | 'Arithmetic' | 'Algebra' | 'Calculus';
 
 type AIResponse = {
   extracted_problem?: string;
@@ -73,6 +88,13 @@ type UploadedImage = {
   sizeKB: number;
 };
 
+type SolveHistoryItem = {
+  id: string;
+  prompt: string;
+  answer: string;
+  sutraName: string;
+};
+
 type SpotlightEntry = {
   id: string;
   badge: string;
@@ -87,39 +109,49 @@ type SpotlightEntry = {
   aliases: string[];
 };
 
-const SUTRAS: [string, string, string][] = [
-  ['Ekadhikena Purvena', 'By one more than the previous', '65²'],
-  ['Nikhilam Navatashcaramam Dashatah', 'All from 9 and the last from 10', '97 × 94'],
-  ['Urdhva-Tiryagbhyam', 'Vertically and crosswise', '23 × 41'],
-  ['Paraavartya Yojayet', 'Transpose and adjust', 'Explain Paraavartya Yojayet with an example (13799 ÷ 113)'],
-  ['Shunyam Saamyasamuccaye', 'If the sum is the same, sum is zero', 'Solve (x + 2) + (x + 3) = 0 using Shunyam Saamyasamuccaye'],
-  ['Anurupye Shunyamanyat', 'If one is in ratio, the other is zero', 'Solve 5x + 6y = 3 and 10x + 18y = 6 using Anurupye Shunyamanyat'],
-  ['Sankalana-Vyavakalanabhyam', 'By addition and subtraction', 'Solve 45x - 23y = 113 and 23x - 45y = 91'],
-  ['Puranapuranabhyam', 'By the completion or non-completion', 'Explain Puranapuranabhyam with a quadratic example'],
-  ['Chalana-Kalanabhyam', 'Differences and similarities', 'Explain Chalana-Kalanabhyam in quadratic roots'],
-  ['Yaavadunam', 'Whatever the extent of its deficiency', 'Square 98 using Yaavadunam'],
-  ['Vyashtisamashtih', 'Part and whole', 'Explain Vyashtisamashtih with an average example'],
-  ['Shesanyankena Charamena', 'The remainders by the last digit', 'Convert 1/7 to a decimal using Shesanyankena Charamena'],
-  ['Sopantyadvayamantyam', 'The ultimate and twice the penultimate', 'Explain Sopantyadvayamantyam with a rational equation'],
-  ['Ekanyunena Purvena', 'By one less than the previous', '37 × 99'],
-  ['Gunitasamuccayah', 'The product of the sum is the sum', 'Verify (x + 2)(x + 3) = x² + 5x + 6 using Gunitasamuccayah'],
-  ['Gunakasamuccayah', 'The factors of the sum equal the sum of factors', 'Factorize x² + 5x + 6 and verify with Gunakasamuccayah'],
+type SutraCatalogItem = {
+  name: string;
+  sanskrit: string;
+  meaning: string;
+  example: string;
+  category: Exclude<SutraCategory, 'All'>;
+};
+
+const SUTRAS_CATALOG: SutraCatalogItem[] = [
+  { name: 'Ekadhikena Purvena', sanskrit: 'एकाधिकेन पूर्वेण', meaning: 'By one more than the previous', example: '65²', category: 'Arithmetic' },
+  { name: 'Nikhilam Navatashcaramam Dashatah', sanskrit: 'निखिलं नवतश्चरमं दशतः', meaning: 'All from 9 and the last from 10', example: '97 × 94', category: 'Arithmetic' },
+  { name: 'Urdhva-Tiryagbhyam', sanskrit: 'ऊर्ध्वतिर्यग्भ्याम्', meaning: 'Vertically and crosswise', example: '23 × 41', category: 'Arithmetic' },
+  { name: 'Paraavartya Yojayet', sanskrit: 'परावर्त्य योजयेत्', meaning: 'Transpose and adjust', example: 'Explain Paraavartya Yojayet with an example (13799 ÷ 113)', category: 'Algebra' },
+  { name: 'Shunyam Saamyasamuccaye', sanskrit: 'शून्यं साम्यसमुच्चये', meaning: 'If the sum is the same, sum is zero', example: 'Solve (x + 2) + (x + 3) = 0 using Shunyam Saamyasamuccaye', category: 'Algebra' },
+  { name: 'Anurupye Shunyamanyat', sanskrit: 'आनुरूप्ये शून्यमन्यत्', meaning: 'If one is in ratio, the other is zero', example: 'Solve 5x + 6y = 3 and 10x + 18y = 6 using Anurupye Shunyamanyat', category: 'Algebra' },
+  { name: 'Sankalana-Vyavakalanabhyam', sanskrit: 'सङ्कलनव्यवकलनाभ्याम्', meaning: 'By addition and subtraction', example: '45x - 23y = 113 and 23x - 45y = 91', category: 'Algebra' },
+  { name: 'Puranapuranabhyam', sanskrit: 'पूरणापूरणाभ्याम्', meaning: 'By the completion or non-completion', example: 'x² + 2x - 8 = 0', category: 'Algebra' },
+  { name: 'Chalana-Kalanabhyam', sanskrit: 'चलनकलनाभ्याम्', meaning: 'Differences and similarities', example: 'Explain Chalana-Kalanabhyam in quadratic roots', category: 'Calculus' },
+  { name: 'Yaavadunam', sanskrit: 'यावदूनम्', meaning: 'Whatever the extent of its deficiency', example: '98²', category: 'Arithmetic' },
+  { name: 'Vyashtisamashtih', sanskrit: 'व्यष्टिसमष्टिः', meaning: 'Part and whole', example: 'Explain Vyashtisamashtih with an average example', category: 'Calculus' },
+  { name: 'Shesanyankena Charamena', sanskrit: 'शेषाण्यङ्केन चरमेण', meaning: 'The remainders by the last digit', example: 'Convert 1/7 to a decimal using Shesanyankena Charamena', category: 'Arithmetic' },
+  { name: 'Sopantyadvayamantyam', sanskrit: 'सोपान्त्यद्वयमन्त्यम्', meaning: 'The ultimate and twice the penultimate', example: 'Explain Sopantyadvayamantyam with a rational equation', category: 'Algebra' },
+  { name: 'Ekanyunena Purvena', sanskrit: 'एकन्यूनेन पूर्वेण', meaning: 'By one less than the previous', example: '37 × 99', category: 'Arithmetic' },
+  { name: 'Gunitasamuccayah', sanskrit: 'गुणितसमुच्चयः', meaning: 'The product of the sum is the sum', example: 'Verify (x + 2)(x + 3) = x² + 5x + 6 using Gunitasamuccayah', category: 'Algebra' },
+  { name: 'Gunakasamuccayah', sanskrit: 'गुणकसमुच्चयः', meaning: 'The factors of the sum equal the sum of factors', example: 'Factorize x² + 5x + 6 and verify with Gunakasamuccayah', category: 'Algebra' },
 ];
 
-const SUB_SUTRAS = [
-  'Anurupyena',
-  'Shishyate Sheshasanjnah',
-  'Adyamadyenantyamantyena',
-  'Kevalaih Saptakam Gunyat',
-  'Veshtanam',
-  'Yavadunam Tavadunam',
-  'Yavadunam Tavadunikritya Vargancha Yojayet',
-  'Antyayordashake’pi',
-  'Antyayoreva',
-  'Samuccayagunitah',
-  'Lopanasthapanabhyam',
-  'Vilokanam',
-  'Gunitasamuccayah Samuccayagunitah',
+const SUTRAS: [string, string, string][] = SUTRAS_CATALOG.map(s => [s.name, s.meaning, s.example]);
+
+const SUB_SUTRAS_CATALOG = [
+  { name: 'Anurupyena', meaning: 'Proportionately (working base scaling)', prompt: 'Explain Anurupyena sub-sutra with 48 × 46' },
+  { name: 'Shishyate Sheshasanjnah', meaning: 'The remainder remains constant', prompt: 'Explain Shishyate Sheshasanjnah sub-sutra with an example' },
+  { name: 'Adyamadyenantyamantyena', meaning: 'The first by the first and the last by the last', prompt: 'Factorize 2x² + 5x + 2 using Adyamadyenantyamantyena' },
+  { name: 'Kevalaih Saptakam Gunyat', meaning: 'For 7, the multiplier is 143', prompt: 'Explain Kevalaih Saptakam Gunyat with 1/7' },
+  { name: 'Veshtanam', meaning: 'By osculation (divisibility test)', prompt: 'Test divisibility of 273 by 13 using Veshtanam' },
+  { name: 'Yavadunam Tavadunam', meaning: 'Lessen by the deficiency', prompt: 'Square 96 using Yavadunam Tavadunam' },
+  { name: 'Yavadunam Tavadunikritya Vargancha Yojayet', meaning: 'Lessen by deficiency and append its square', prompt: '98²' },
+  { name: 'Antyayordashake’pi', meaning: 'Last digits sum to 10 with same prefix', prompt: 'Multiply 43 × 47 using Antyayordashake’pi' },
+  { name: 'Antyayoreva', meaning: 'Only the last terms', prompt: 'Explain Antyayoreva in linear rational equations' },
+  { name: 'Samuccayagunitah', meaning: 'Sum of coefficients product', prompt: 'Explain Samuccayagunitah sub-sutra' },
+  { name: 'Lopanasthapanabhyam', meaning: 'By alternate elimination and retention', prompt: 'Factorize x² + 5xy + 6y² + 3x + 7y + 2 using Lopanasthapanabhyam' },
+  { name: 'Vilokanam', meaning: 'By mere observation', prompt: 'Cube root of 1728' },
+  { name: 'Gunitasamuccayah Samuccayagunitah', meaning: 'Product of coefficient sums verification', prompt: 'Verify (x + 1)(x + 4) = x² + 5x + 4 using Gunitasamuccayah' },
 ];
 
 const SPOTLIGHT_ENTRIES: SpotlightEntry[] = [
@@ -233,7 +265,7 @@ const SPOTLIGHT_ENTRIES: SpotlightEntry[] = [
     exampleAnswer: 'x = 3/5, y = 0',
     quickExamples: [
       'Solve 5x + 6y = 3 and 10x + 18y = 6 using Anurupye Shunyamanyat',
-      'Solve 45x - 23y = 113 and 23x - 45y = 91',
+      '45x - 23y = 113 and 23x - 45y = 91',
       '97 × 94',
     ],
     aliases: ['anurupye', 'shunyamanyat', 'anurupye shunyamanyat'],
@@ -253,8 +285,8 @@ const SPOTLIGHT_ENTRIES: SpotlightEntry[] = [
     ],
     exampleAnswer: 'x = 2, y = −1',
     quickExamples: [
-      'Solve 45x - 23y = 113 and 23x - 45y = 91',
-      'Solve 17x + 13y = 47 and 13x + 17y = 43',
+      '45x - 23y = 113 and 23x - 45y = 91',
+      '17x + 13y = 47 and 13x + 17y = 43',
       '97 × 94',
     ],
     aliases: ['sankalana', 'vyavakalanabhyam', 'sankalana-vyavakalanabhyam'],
@@ -273,11 +305,7 @@ const SPOTLIGHT_ENTRIES: SpotlightEntry[] = [
       'Take roots: x + 1 = ±3  ⇒  x = 2 or −4',
     ],
     exampleAnswer: 'x = 2, −4',
-    quickExamples: [
-      'Explain Puranapuranabhyam with a quadratic example',
-      'Solve x² + 6x - 16 = 0 by completing the square',
-      'Explain Chalana-Kalanabhyam in quadratic roots',
-    ],
+    quickExamples: ['x² + 2x - 8 = 0', 'x² + 6x - 16 = 0', 'Explain Chalana-Kalanabhyam in quadratic roots'],
     aliases: ['puranapuranabhyam', 'purana', 'completing the square'],
   },
   {
@@ -297,7 +325,7 @@ const SPOTLIGHT_ENTRIES: SpotlightEntry[] = [
     quickExamples: [
       'Explain Chalana-Kalanabhyam in quadratic roots',
       'Find roots of 2x² - 7x + 3 = 0 using Chalana-Kalanabhyam',
-      'Explain Puranapuranabhyam with a quadratic example',
+      'x² + 2x - 8 = 0',
     ],
     aliases: ['chalana', 'kalanabhyam', 'chalana-kalanabhyam', 'chalana-kalanabyham'],
   },
@@ -315,7 +343,7 @@ const SPOTLIGHT_ENTRIES: SpotlightEntry[] = [
       'Append d² = (−2)² = 04 → 96 | 04',
     ],
     exampleAnswer: '98² = 9604',
-    quickExamples: ['Square 98 using Yaavadunam', 'Square 104 using Yaavadunam', '97 × 94', '65²'],
+    quickExamples: ['98²', '104²', '996²', '65²'],
     aliases: ['yaavadunam', 'yavadunam'],
   },
   {
@@ -540,6 +568,22 @@ function buildDynamicSpotlight(
     }
   }
 
+  if (base.id === 'yaavadunam' && inferred.numbers.length >= 1) {
+    const n = inferred.numbers[0];
+    const baseNum = pickBase(n, n);
+    const diff = n - baseNum;
+    return {
+      ...base,
+      exampleProblem: `${n}²`,
+      exampleSteps: [
+        `Nearest base = ${baseNum}; deviation d = ${diff >= 0 ? `+${diff}` : diff}`,
+        `Shift further: ${n} ${diff >= 0 ? '+' : '−'} ${Math.abs(diff)} = ${n + diff}`,
+        `Square deviation: (${diff})² = ${diff * diff}`,
+      ],
+      exampleAnswer: `${n}² = ${n * n}`,
+    };
+  }
+
   if (base.id === 'nikhilam' && inferred.numbers.length >= 2) {
     const [a, b] = inferred.numbers;
     const max = Math.max(a, b, 1);
@@ -643,13 +687,45 @@ function inferLocalProblem(raw: string): { sutra: string; numbers: number[]; dis
   const text = raw.trim();
   if (!text) return null;
 
-  const squareMatch = text.match(/^(-?\d+)\s*(?:\^2|²)$/);
+  const squareMatch = text.match(/^(?:square\s+)?(-?\d+)\s*(?:\^2|²)(?:\s+using\s+yaavadunam)?$/i);
   if (squareMatch) {
     const n = Number(squareMatch[1]);
     if (Math.abs(n) % 10 === 5) {
       return { sutra: 'ekadhikena', numbers: [n], displayName: 'Ekadhikena Purvena' };
     }
+    const base = pickBase(Math.abs(n), Math.abs(n));
+    if (base >= 10 && Math.abs(Math.abs(n) - base) <= base * 0.2) {
+      return { sutra: 'yaavadunam', numbers: [Math.abs(n)], displayName: 'Yaavadunam' };
+    }
     return { sutra: 'urdhva', numbers: [Math.abs(n), Math.abs(n)], displayName: 'Urdhva-Tiryagbhyam' };
+  }
+
+  const sankalanaMatch = text.match(
+    /^(-?\d+)\s*x\s*([+-]\s*\d+)\s*y\s*=\s*(-?\d+)\s*(?:and|,|;)\s*(-?\d+)\s*x\s*([+-]\s*\d+)\s*y\s*=\s*(-?\d+)$/i,
+  );
+  if (sankalanaMatch) {
+    const a1 = Number(sankalanaMatch[1]);
+    const b1 = Number(sankalanaMatch[2].replace(/\s+/g, ''));
+    const c1 = Number(sankalanaMatch[3]);
+    const a2 = Number(sankalanaMatch[4]);
+    const b2 = Number(sankalanaMatch[5].replace(/\s+/g, ''));
+    const c2 = Number(sankalanaMatch[6]);
+    if (a1 === b2 && b1 === a2 && a1 !== b1 && a1 !== -b1) {
+      return { sutra: 'sankalana', numbers: [a1, b1, c1, c2], displayName: 'Sankalana-Vyavakalanabhyam' };
+    }
+  }
+
+  const quadMatch = text.match(
+    /^(-?\d*)\s*x(?:\^2|²)\s*([+-]\s*\d+)\s*x\s*([+-]\s*\d+)\s*=\s*0$/i,
+  );
+  if (quadMatch) {
+    const aStr = quadMatch[1].trim();
+    const a = aStr === '' ? 1 : aStr === '-' ? -1 : Number(aStr);
+    const b = Number(quadMatch[2].replace(/\s+/g, ''));
+    const c = Number(quadMatch[3].replace(/\s+/g, ''));
+    if (Number.isFinite(a) && a !== 0 && Number.isFinite(b) && Number.isFinite(c)) {
+      return { sutra: 'puranapuranabhyam', numbers: [a, b, c], displayName: 'Puranapuranabhyam' };
+    }
   }
 
   const cubeMatch = text.match(/^(?:∛|cube\s*root(?:\s*of)?)\s*(\d+)$/i);
@@ -685,6 +761,12 @@ function dispatchSutra(sutra: string, numbers: number[], textInput?: string): Un
       return numbers.length >= 2 ? nikhilam(numbers[0], numbers[1]) : null;
     case 'ekadhikena':
       return numbers[0] !== undefined ? ekadhikenaSquare(numbers[0]) : null;
+    case 'yaavadunam':
+      return numbers[0] !== undefined ? yaavadunam(numbers[0]) : null;
+    case 'sankalana':
+      return numbers.length >= 4 ? sankalanaSymmetric(numbers[0], numbers[1], numbers[2], numbers[3]) : null;
+    case 'puranapuranabhyam':
+      return numbers.length >= 3 ? puranapuranabhyam(numbers[0], numbers[1], numbers[2]) : null;
     case 'ekanyunena': {
       if (numbers.length < 2) return null;
       const [a, b] = numbers;
@@ -705,19 +787,19 @@ function dispatchSutra(sutra: string, numbers: number[], textInput?: string): Un
     }
     case 'kaprekar': {
       if (numbers[0] === undefined) return null;
-      const k = kaprekar(numbers[0]);
+      const k = kaprekarDetailed(numbers[0]);
       if (k.error) return { answer: null, steps: [], error: k.error };
       return {
-        answer: k.steps[k.steps.length - 1] ?? null,
-        steps: k.steps.map((val, idx) => ({
+        answer: k.steps[k.steps.length - 1]?.result ?? null,
+        steps: k.steps.map((step, idx) => ({
           title: `Iteration ${idx + 1}`,
-          detail: `Descending − Ascending yields ${val}${val === 6174 ? ' (Kaprekar Constant reached!)' : ''}.`,
+          detail: `${step.desc} − ${step.asc} = ${step.result}${step.result === 6174 ? ' (Kaprekar Constant reached!)' : ''}.`,
         })),
       };
     }
     case 'katapayadi': {
       if (!textInput?.trim()) return null;
-      const k = katapayadi(textInput);
+      const k = katapayadiDetailed(textInput);
       return {
         answer: k.traditional,
         steps: [
@@ -728,6 +810,24 @@ function dispatchSutra(sutra: string, numbers: number[], textInput?: string): Un
     }
     default:
       return null;
+  }
+}
+
+function loadSolveHistory(): SolveHistoryItem[] {
+  try {
+    const raw = localStorage.getItem('ganita-history');
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, 6) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSolveHistory(items: SolveHistoryItem[]) {
+  try {
+    localStorage.setItem('ganita-history', JSON.stringify(items.slice(0, 6)));
+  } catch {
+    // Ignore browser storage errors.
   }
 }
 
@@ -821,8 +921,9 @@ function HelpModal({ onClose }: { onClose: () => void }) {
 const QUICK_SAMPLES = [
   { label: '97 × 94 (Nikhilam)', prompt: '97 × 94' },
   { label: '65² (Ekadhikena)', prompt: '65²' },
+  { label: '98² (Yaavadunam)', prompt: '98²' },
   { label: '37 × 99 (Ekanyunena)', prompt: '37 × 99' },
-  { label: '∛1728 (Vilokanam)', prompt: 'Cube root of 1728' },
+  { label: '45x - 23y = 113…', prompt: '45x - 23y = 113 and 23x - 45y = 91' },
   {
     label: 'Lilavati Riddle',
     prompt:
@@ -831,14 +932,16 @@ const QUICK_SAMPLES = [
 ];
 
 function Home({
-  queued,
-  onClearQueued,
+  initialPrompt,
+  initialSutra,
+  autoSolveOnMount,
 }: {
-  queued: { prompt: string; sutraName: string } | null;
-  onClearQueued: () => void;
+  initialPrompt?: string;
+  initialSutra?: string;
+  autoSolveOnMount?: boolean;
 }) {
-  const [prompt, setPrompt] = useState(queued?.prompt || '97 × 94');
-  const [pinnedSutra, setPinnedSutra] = useState(queued?.sutraName || '');
+  const [prompt, setPrompt] = useState(initialPrompt || '97 × 94');
+  const [pinnedSutra, setPinnedSutra] = useState(initialSutra || '');
   const [result, setResult] = useState<AIResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -847,53 +950,91 @@ function Home({
   const [copied, setCopied] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [image, setImage] = useState<UploadedImage | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [history, setHistory] = useState<SolveHistoryItem[]>(loadSolveHistory);
   const [hoveredStepIdx, setHoveredStepIdx] = useState<number | null>(null);
+  const [playbackIdx, setPlaybackIdx] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const autoRanRef = useRef(false);
   const inputSurface = useSpotlightSurface({ tilt: false });
   const resultSurface = useSpotlightSurface({ tilt: true });
   const spotlightSurface = useSpotlightSurface({ tilt: true });
   const solveMagnetic = useMagnetic(5);
   const uploadMagnetic = useMagnetic(5);
 
-  useEffect(() => {
-    if (queued) {
-      setPrompt(queued.prompt);
-      setPinnedSutra(queued.sutraName);
-      setResult(null);
+  const recordHistory = useCallback((promptText: string, answerText: string, sutraName: string) => {
+    const cleanPrompt = promptText.trim();
+    if (!cleanPrompt || !answerText) return;
+    setHistory(prev => {
+      const next = [
+        { id: `${Date.now()}`, prompt: cleanPrompt, answer: answerText, sutraName },
+        ...prev.filter(item => item.prompt.toLowerCase() !== cleanPrompt.toLowerCase()),
+      ].slice(0, 6);
+      saveSolveHistory(next);
+      return next;
+    });
+  }, []);
+
+  const solveWithPrompt = useCallback(
+    async (overridePrompt?: string, overrideImage?: UploadedImage | null) => {
+      const activePrompt = (overridePrompt ?? prompt).trim();
+      const activeImg = overrideImage !== undefined ? overrideImage : image;
+      if (loading || (!activePrompt && !activeImg)) return;
+      setLoading(true);
       setError('');
-      setMode('text');
-      onClearQueued();
-    }
-  }, [queued, onClearQueued]);
-
-  async function solve() {
-    if (loading || (!prompt.trim() && !image)) return;
-    setLoading(true);
-    setError('');
-    setResult(null);
-    try {
-      const response = await fetch('/api/solve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, image: image?.data, mimeType: image?.mime }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        setError(payload?.error || `The AI service returned HTTP ${response.status}.`);
+      setResult(null);
+      setPlaybackIdx(null);
+      setPlaying(false);
+      try {
+        const response = await fetch('/api/solve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: activePrompt, image: activeImg?.data, mimeType: activeImg?.mime }),
+        });
+        const payload = (await response.json().catch(() => null)) as (AIResponse & { error?: string }) | null;
+        if (!response.ok || !payload) {
+          setError(payload?.error || `The AI service returned HTTP ${response.status}.`);
+          playError();
+          return;
+        }
+        setResult(payload);
+        playSolveChime();
+        const aiNums = Array.isArray(payload.numbers)
+          ? payload.numbers.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
+          : [];
+        const resolved = dispatchSutra(payload.best_sutra ?? 'other', aiNums, payload.text_input);
+        const answerLabel =
+          resolved?.answer !== null && resolved?.answer !== undefined
+            ? String(resolved.answer)
+            : payload.ai_steps?.[payload.ai_steps.length - 1]?.title || 'AI Walkthrough';
+        recordHistory(
+          payload.extracted_problem || activePrompt || 'Handwritten Photo',
+          answerLabel,
+          payload.sutra_display_name || 'Vedic AI',
+        );
+      } catch {
+        setError('Could not reach /api/solve. Run via Vercel deployment or `npm run dev`.');
         playError();
-        return;
+      } finally {
+        setLoading(false);
       }
-      setResult(payload);
-      playSolveChime();
-    } catch {
-      setError('Could not reach /api/solve. Run via Vercel deployment or `npx vercel dev`.');
-      playError();
-    } finally {
-      setLoading(false);
-    }
-  }
+    },
+    [image, loading, prompt, recordHistory],
+  );
 
-  function chooseFile(file?: File) {
+  useEffect(() => {
+    if (autoRanRef.current || !autoSolveOnMount || !initialPrompt) return;
+    if (inferLocalProblem(initialPrompt)) return;
+    autoRanRef.current = true;
+    const id = window.setTimeout(() => {
+      void solveWithPrompt(initialPrompt, null);
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [autoSolveOnMount, initialPrompt, solveWithPrompt]);
+
+  const chooseFile = useCallback((file?: File) => {
     if (!file) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       setError('Choose a JPEG, PNG, or WebP image.');
@@ -917,7 +1058,7 @@ function Home({
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           setImage({
-            name: file.name,
+            name: file.name || 'pasted-math.png',
             data: originalUrl.split(',')[1],
             mime: file.type,
             preview: originalUrl,
@@ -929,10 +1070,10 @@ function Home({
           return;
         }
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
+        const compressedUrl = canvas.toDataURL('image/jpeg', 0.84);
         const base64 = compressedUrl.split(',')[1];
         setImage({
-          name: file.name,
+          name: file.name || 'pasted-math.jpg',
           data: base64,
           mime: 'image/jpeg',
           preview: compressedUrl,
@@ -941,20 +1082,69 @@ function Home({
         setMode('image');
         setResult(null);
         setError('');
+        playClick();
       };
       img.onerror = () => setError('Could not read this image. Try a JPEG, PNG, or WebP file.');
       img.src = originalUrl;
     };
     reader.readAsDataURL(file);
+  }, []);
+
+  function rotateImage90() {
+    if (!image) return;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.height;
+      canvas.height = img.width;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      const rotatedUrl = canvas.toDataURL('image/jpeg', 0.84);
+      const base64 = rotatedUrl.split(',')[1];
+      setImage({
+        ...image,
+        data: base64,
+        preview: rotatedUrl,
+        sizeKB: Math.max(1, Math.round((base64.length * 0.75) / 1024)),
+      });
+      playClick();
+    };
+    img.src = image.preview;
   }
 
-  const inferred = useMemo(() => inferLocalProblem(prompt), [prompt]);
-  const aiNumbers = Array.isArray(result?.numbers)
-    ? result.numbers.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
-    : [];
+  useEffect(() => {
+    const onWindowPaste = (e: ClipboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            chooseFile(file);
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', onWindowPaste);
+    return () => window.removeEventListener('paste', onWindowPaste);
+  }, [chooseFile]);
 
+  const inferred = useMemo(() => inferLocalProblem(prompt), [prompt]);
   const activeSutra = result?.best_sutra ?? inferred?.sutra ?? 'other';
-  const activeNumbers = result ? aiNumbers : (inferred?.numbers ?? []);
+  const activeNumbers = useMemo(() => {
+    if (result) {
+      return Array.isArray(result.numbers)
+        ? result.numbers.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
+        : [];
+    }
+    return inferred?.numbers ?? [];
+  }, [inferred, result]);
   const local = useMemo(
     () => dispatchSutra(activeSutra, activeNumbers, result?.text_input),
     [activeSutra, activeNumbers, result?.text_input],
@@ -979,6 +1169,27 @@ function Home({
       : 0;
   const scrambledAnswer = useScrambleValue(local?.answer ?? null);
 
+  const activeSteps = local?.steps?.length ? local.steps : (result?.ai_steps ?? []);
+  const activeStepCount = activeSteps.length;
+
+  useEffect(() => {
+    if (!playing || activeStepCount === 0) return;
+    const id = window.setInterval(() => {
+      setPlaybackIdx(prev => {
+        const next = prev === null ? 0 : prev + 1;
+        if (next >= activeStepCount) {
+          setPlaying(false);
+          return activeStepCount - 1;
+        }
+        playHoverTick();
+        return next;
+      });
+    }, 1150);
+    return () => window.clearInterval(id);
+  }, [playing, activeStepCount]);
+
+  const effectiveDiagramStep = hoveredStepIdx ?? playbackIdx;
+
   function copyAnswer(val: number | string) {
     navigator.clipboard?.writeText(String(val));
     setCopied(true);
@@ -998,7 +1209,7 @@ function Home({
             </p>
             <h1>Vedic Math Workspace</h1>
             <p className="subtitle">
-              Type an equation, paste a <em>Lilavati</em> riddle, or drop a photo of handwritten math.
+              Type an equation, paste a <em>Lilavati</em> riddle, or press <kbd>Ctrl+V</kbd> to drop a handwritten math screenshot.
             </p>
           </div>
           <span
@@ -1034,22 +1245,33 @@ function Home({
         >
           <div className="input-head">
             <div className="mode-tabs">
-              <button className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>
+              <button type="button" className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>
                 <Calculator size={16} /> Text / Riddle
               </button>
-              <button className={mode === 'image' ? 'active' : ''} onClick={() => inputRef.current?.click()}>
+              <button type="button" className={mode === 'image' ? 'active' : ''} onClick={() => inputRef.current?.click()}>
                 <ImagePlus size={16} /> Snap / Image
               </button>
             </div>
-            <button className="help-button" onClick={() => setHelpOpen(true)} aria-label="How the AI works">
-              <CircleHelp size={18} />
-            </button>
+            <div className="input-head-right">
+              <span className="paste-hint">Ctrl+V image supported</span>
+              <button type="button" className="help-button" onClick={() => setHelpOpen(true)} aria-label="How the AI works">
+                <CircleHelp size={18} />
+              </button>
+            </div>
           </div>
 
           <input
             ref={inputRef}
             type="file"
             accept="image/jpeg,image/png,image/webp"
+            hidden
+            onChange={e => chooseFile(e.target.files?.[0])}
+          />
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
             hidden
             onChange={e => chooseFile(e.target.files?.[0])}
           />
@@ -1061,18 +1283,30 @@ function Home({
                 <strong>{image.name}</strong>
                 <span>{image.sizeKB} KB · Ready for AI Vision</span>
               </div>
-              <button
-                className="image-remove"
-                aria-label="Remove image"
-                onClick={() => {
-                  setImage(null);
-                  setMode('text');
-                  setResult(null);
-                  setError('');
-                }}
-              >
-                <X size={16} />
-              </button>
+              <div className="image-bar-actions">
+                <button
+                  type="button"
+                  className="image-rotate"
+                  aria-label="Rotate image 90 degrees"
+                  title="Rotate 90°"
+                  onClick={rotateImage90}
+                >
+                  <RotateCw size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="image-remove"
+                  aria-label="Remove image"
+                  onClick={() => {
+                    setImage(null);
+                    setMode('text');
+                    setResult(null);
+                    setError('');
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
               {loading ? (
                 <div className="ocr-scan" aria-live="polite">
                   <span>SCANNING GLYPHS // ROUTING SUTRA...</span>
@@ -1090,14 +1324,16 @@ function Home({
               setMode(image ? 'image' : 'text');
               setResult(null);
               setError('');
+              setPlaybackIdx(null);
+              setPlaying(false);
             }}
             onKeyDown={e => {
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
-                solve();
+                void solveWithPrompt();
               }
             }}
-            placeholder="Try 97 × 94, 65², 37 × 99, Cube root of 1728, or paste a Lilavati riddle..."
+            placeholder="Try 97 × 94, 98², 65², 45x - 23y = 113 and 23x - 45y = 91, or paste a Lilavati riddle..."
           />
 
           <div className="quick-prompts">
@@ -1115,6 +1351,8 @@ function Home({
                   setPinnedSutra('');
                   setResult(null);
                   setError('');
+                  setPlaybackIdx(null);
+                  setPlaying(false);
                 }}
               >
                 {sample.label}
@@ -1123,20 +1361,33 @@ function Home({
           </div>
 
           <div className="input-actions">
-            <button
-              type="button"
-              className="camera-button"
-              {...uploadMagnetic}
-              onPointerDown={e => {
-                playClick();
-                spawnRipple(e);
-              }}
-              onClick={() => inputRef.current?.click()}
-            >
-              <span className="btn-inner" data-magnetic-inner>
-                <Upload size={15} /> Upload or drop photo
-              </span>
-            </button>
+            <div className="upload-group">
+              <button
+                type="button"
+                className="camera-button"
+                {...uploadMagnetic}
+                onPointerDown={e => {
+                  playClick();
+                  spawnRipple(e);
+                }}
+                onClick={() => inputRef.current?.click()}
+              >
+                <span className="btn-inner" data-magnetic-inner>
+                  <Upload size={15} /> Upload / Paste
+                </span>
+              </button>
+              <button
+                type="button"
+                className="camera-button capture-btn"
+                onPointerDown={e => {
+                  playClick();
+                  spawnRipple(e);
+                }}
+                onClick={() => cameraRef.current?.click()}
+              >
+                <Camera size={15} /> Camera
+              </button>
+            </div>
             <div className="action-right">
               <span className="shortcut-hint">Ctrl + Enter</span>
               <button
@@ -1147,7 +1398,7 @@ function Home({
                   playClick();
                   spawnRipple(e, true);
                 }}
-                onClick={solve}
+                onClick={() => void solveWithPrompt()}
                 disabled={loading || (!prompt.trim() && !image)}
               >
                 <span className="btn-inner" data-magnetic-inner>
@@ -1163,7 +1414,7 @@ function Home({
           <section className="loading-card" aria-live="polite">
             <div className="loading-head">
               <RefreshCw className="spin" size={16} />
-              Groq AI is analyzing the problem & selecting the optimal Indian Sutra...
+              Groq AI is analyzing the problem &amp; selecting the optimal Indian Sutra...
             </div>
             <div className="skeleton-line w-60" />
             <div className="skeleton-line w-90" />
@@ -1203,39 +1454,94 @@ function Home({
               </div>
             </div>
 
-            {result && sanskritVerse ? (
+            {sanskritVerse ? (
               <div className="sanskrit-ribbon">
                 <strong>{sanskritVerse}</strong>
-                <span>Confidence: {result.confidence ?? 'high'}</span>
+                <span>{result ? `Confidence: ${result.confidence ?? 'high'}` : 'Local Preview · 0ms'}</span>
               </div>
             ) : null}
 
+            <SutraDiagram sutra={activeSutra} numbers={activeNumbers} activeStep={effectiveDiagramStep} />
+
             <div className="solution-layout">
               <div className="steps-panel">
-                <h3 className="panel-heading">Step-by-step Vedic Execution</h3>
-                {local.steps.map((step, i) => (
-                  <div
-                    className={`step ${hoveredStepIdx === i ? 'step-linked' : ''}`}
-                    style={{ animationDelay: `${i * 55}ms` }}
-                    key={`${step.title}-${i}`}
-                    onPointerEnter={() => setHoveredStepIdx(i)}
-                    onPointerLeave={() => setHoveredStepIdx(null)}
-                    onFocus={() => setHoveredStepIdx(i)}
-                    onBlur={() => setHoveredStepIdx(null)}
-                    tabIndex={0}
-                  >
-                    <span>{String(i + 1).padStart(2, '0')}</span>
-                    <div>
-                      <strong>{step.title}</strong>
-                      <p>{step.detail}</p>
+                <div className="steps-panel-head">
+                  <h3 className="panel-heading">Step-by-step Vedic Execution</h3>
+                  {local.steps.length > 1 ? (
+                    <div className="playback-bar">
+                      <button
+                        type="button"
+                        className={`playback-btn ${playing ? 'active' : ''}`}
+                        onClick={() => {
+                          playClick();
+                          if (playing) {
+                            setPlaying(false);
+                          } else {
+                            if (playbackIdx === null || playbackIdx >= local.steps.length - 1) setPlaybackIdx(0);
+                            setPlaying(true);
+                          }
+                        }}
+                      >
+                        {playing ? <Pause size={11} /> : <Play size={11} />}
+                        {playing ? 'Pause' : 'Animate'}
+                      </button>
+                      <button
+                        type="button"
+                        className="playback-btn"
+                        onClick={() => {
+                          playClick();
+                          setPlaying(false);
+                          setPlaybackIdx(prev => (prev === null ? 0 : Math.min(local.steps.length - 1, prev + 1)));
+                        }}
+                        title="Next step"
+                      >
+                        <SkipForward size={11} />
+                      </button>
+                      {playbackIdx !== null ? (
+                        <button
+                          type="button"
+                          className="playback-btn"
+                          onClick={() => {
+                            playClick();
+                            setPlaying(false);
+                            setPlaybackIdx(null);
+                          }}
+                          title="Show all steps"
+                        >
+                          <RotateCcw size={11} />
+                        </button>
+                      ) : null}
                     </div>
-                  </div>
-                ))}
+                  ) : null}
+                </div>
+
+                {local.steps.map((step, i) => {
+                  const isDimmed = playbackIdx !== null && i > playbackIdx;
+                  const isLinked = effectiveDiagramStep === i;
+                  return (
+                    <div
+                      className={`step ${isLinked ? 'step-linked' : ''} ${isDimmed ? 'step-dimmed' : ''}`}
+                      style={{ animationDelay: `${i * 55}ms` }}
+                      key={`${step.title}-${i}`}
+                      onPointerEnter={() => setHoveredStepIdx(i)}
+                      onPointerLeave={() => setHoveredStepIdx(null)}
+                      onFocus={() => setHoveredStepIdx(i)}
+                      onBlur={() => setHoveredStepIdx(null)}
+                      tabIndex={0}
+                    >
+                      <span>{String(i + 1).padStart(2, '0')}</span>
+                      <div>
+                        <strong>{step.title}</strong>
+                        <p>{step.detail}</p>
+                      </div>
+                    </div>
+                  );
+                })}
                 {local.error ? <p className="error-inline">{local.error}</p> : null}
               </div>
 
               <div className="compare-panel">
-                <h3 className="panel-heading">Efficiency & AI Intuition</h3>
+                <h3 className="panel-heading">Efficiency &amp; AI Intuition</h3>
                 {showStandardComparison ? (
                   <>
                     <div className="comparison">
@@ -1245,23 +1551,14 @@ function Home({
                       </div>
                       <div className="metric-tile">
                         <span>Standard ops</span>
-                        <strong>
-                          {standardOperationCount}
-                        </strong>
+                        <strong>{standardOperationCount}</strong>
                       </div>
                     </div>
-                    <div
-                      className="efficiency-bars"
-                      aria-label="Vedic step count compared with standard operations"
-                    >
+                    <div className="efficiency-bars" aria-label="Vedic step count compared with standard operations">
                       <div className="efficiency-bar-row">
                         <span>Vedic steps</span>
                         <div className="efficiency-track">
-                          <i
-                            style={{
-                              width: `${Math.min(100, (local.steps.length / standardOperationCount) * 100)}%`,
-                            }}
-                          />
+                          <i style={{ width: `${Math.min(100, (local.steps.length / standardOperationCount) * 100)}%` }} />
                         </div>
                         <strong>{local.steps.length}</strong>
                       </div>
@@ -1290,8 +1587,8 @@ function Home({
                       <Sparkles size={14} /> Instant Local Preview
                     </h4>
                     <p>
-                      Click <strong>Solve with AI</strong> to get the Sanskrit verse, algebraic proof, and historical
-                      IKS context from Groq AI.
+                      Click <strong>Solve with AI</strong> to get the algebraic proof, Groq reasoning, and historical IKS
+                      context.
                     </p>
                   </div>
                 )}
@@ -1365,11 +1662,65 @@ function Home({
           </section>
         ) : (
           <section className="empty-result">
-            <BrainCircuit size={30} />
-            <p>
-              {local?.error ||
-                'Ready to solve. Click "Solve with AI" for word problems, proofs, or handwritten image recognition.'}
-            </p>
+            <div className="empty-lead">
+              <BrainCircuit size={26} />
+              <p>
+                {local?.error ||
+                  'Ready to solve. Click "Solve with AI" for word problems, proofs, or handwritten image recognition—or pick a track below:'}
+              </p>
+            </div>
+            <div className="capability-grid">
+              <button
+                type="button"
+                className="capability-card"
+                onClick={() => {
+                  setPrompt('97 × 94');
+                  playClick();
+                }}
+              >
+                <span>01 · Arithmetic</span>
+                <strong>Base Shortcuts</strong>
+                <small>97 × 94 · 98²</small>
+              </button>
+              <button
+                type="button"
+                className="capability-card"
+                onClick={() => {
+                  playClick();
+                  inputRef.current?.click();
+                }}
+              >
+                <span>02 · Vision OCR</span>
+                <strong>Snap / Paste Math</strong>
+                <small>Ctrl+V or Upload</small>
+              </button>
+              <button
+                type="button"
+                className="capability-card"
+                onClick={() => {
+                  playClick();
+                  const riddle = QUICK_SAMPLES[QUICK_SAMPLES.length - 1].prompt;
+                  setPrompt(riddle);
+                  void solveWithPrompt(riddle, null);
+                }}
+              >
+                <span>03 · Sanskrit Verse</span>
+                <strong>Lilavati Riddles</strong>
+                <small>Run Swarm of Bees</small>
+              </button>
+              <button
+                type="button"
+                className="capability-card"
+                onClick={() => {
+                  setPrompt('45x - 23y = 113 and 23x - 45y = 91');
+                  playClick();
+                }}
+              >
+                <span>04 · Algebra</span>
+                <strong>Symmetric Systems</strong>
+                <small>Sankalana · Quadratic</small>
+              </button>
+            </div>
           </section>
         )}
       </main>
@@ -1392,7 +1743,7 @@ function Home({
           </div>
           <p className="translation">{spotlight.meaning}</p>
 
-          <div className={`spotlight-formula bg-optical-dots ${hoveredStepIdx !== null ? 'formula-linked' : ''}`}>
+          <div className={`spotlight-formula bg-optical-dots ${effectiveDiagramStep !== null ? 'formula-linked' : ''}`}>
             <span>Formula / Rule</span>
             <code>{spotlight.formula}</code>
           </div>
@@ -1404,7 +1755,10 @@ function Home({
             <div className="mini-proof-problem">{spotlight.exampleProblem}</div>
             <ul className="spotlight-steps">
               {spotlight.exampleSteps.map((stepText, idx) => (
-                <li key={idx}>
+                <li
+                  key={idx}
+                  className={effectiveDiagramStep === idx ? 'spotlight-step-active' : ''}
+                >
                   <b>{String(idx + 1).padStart(2, '0')}</b>
                   <span>{stepText}</span>
                 </li>
@@ -1414,10 +1768,59 @@ function Home({
           </div>
         </div>
 
+        {history.length > 0 ? (
+          <div className="recent">
+            <div className="history-head">
+              <h3>Recent AI Solves</h3>
+              <button
+                type="button"
+                className="history-clear"
+                onClick={() => {
+                  setHistory([]);
+                  saveSolveHistory([]);
+                }}
+              >
+                Clear
+              </button>
+            </div>
+            {history.map(item => (
+              <button
+                type="button"
+                className="recent-item"
+                key={item.id}
+                onPointerEnter={playHoverTick}
+                onPointerDown={e => {
+                  playClick();
+                  spawnRipple(e);
+                }}
+                onClick={() => {
+                  setPrompt(item.prompt);
+                  setPinnedSutra(item.sutraName);
+                  setResult(null);
+                  setError('');
+                  if (!inferLocalProblem(item.prompt)) {
+                    void solveWithPrompt(item.prompt, null);
+                  }
+                }}
+              >
+                <div className="history-chip-meta">
+                  <span>{item.prompt}</span>
+                  <small>
+                    = {item.answer} · {item.sutraName}
+                  </small>
+                </div>
+                <ChevronRight size={14} />
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div className="recent">
           <h3>Try Related Examples</h3>
           {spotlight.quickExamples.map(item => (
             <button
+              type="button"
+              className="recent-item"
               key={item}
               onPointerEnter={playHoverTick}
               onPointerDown={e => {
@@ -1429,6 +1832,9 @@ function Home({
                 setPinnedSutra('');
                 setResult(null);
                 setError('');
+                if (!inferLocalProblem(item)) {
+                  void solveWithPrompt(item, null);
+                }
               }}
             >
               <span>{item}</span>
@@ -1441,14 +1847,16 @@ function Home({
   );
 }
 
-function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: string) => void }) {
+function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: string, autoSolve?: boolean) => void }) {
   const [active, setActive] = useState<'Nikhilam' | 'Ekadhikena' | 'Ekanyunena' | 'Urdhva'>('Nikhilam');
   const [a, setA] = useState(97);
   const [b, setB] = useState(94);
   const [square, setSquare] = useState(65);
   const [nineDigits, setNineDigits] = useState(2);
   const [query, setQuery] = useState('');
-  const [selectedSutra, setSelectedSutra] = useState<(typeof SUTRAS)[number] | null>(null);
+  const [category, setCategory] = useState<SutraCategory>('All');
+  const [selectedSutra, setSelectedSutra] = useState<{ name: string; sanskrit?: string; meaning: string; example: string } | null>(null);
+  const [hoveredLabStep, setHoveredLabStep] = useState<number | null>(null);
   const calculatorSurface = useSpotlightSurface({ tilt: false });
   const tabMagnetic = useMagnetic(3);
 
@@ -1460,10 +1868,48 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
   }, [active, a, b, square, nineDigits]);
 
   const filtered = useMemo(
-    () => SUTRAS.filter(s => `${s[0]} ${s[1]}`.toLowerCase().includes(query.toLowerCase())),
-    [query],
+    () =>
+      SUTRAS_CATALOG.filter(
+        s =>
+          (category === 'All' || s.category === category) &&
+          `${s.name} ${s.sanskrit} ${s.meaning}`.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [category, query],
   );
   const answerDisplay = useScrambleValue(local.answer ?? null);
+
+  const activeSutraId =
+    active === 'Nikhilam'
+      ? 'nikhilam'
+      : active === 'Ekadhikena'
+        ? 'ekadhikena'
+        : active === 'Ekanyunena'
+          ? 'ekanyunena'
+          : 'urdhva';
+  const diagramNumbers =
+    active === 'Ekadhikena'
+      ? [square]
+      : active === 'Ekanyunena'
+        ? [a, Number('9'.repeat(nineDigits))]
+        : [a, b];
+
+  function randomizeLab() {
+    playClick();
+    if (active === 'Nikhilam') {
+      const base = Math.random() < 0.5 ? 100 : 1000;
+      setA(base - randInt(2, 12));
+      setB(base - randInt(2, 12));
+    } else if (active === 'Ekadhikena') {
+      setSquare(randInt(1, 19) * 10 + 5);
+    } else if (active === 'Ekanyunena') {
+      const digits = randInt(2, 3);
+      setNineDigits(digits);
+      setA(digits === 2 ? randInt(12, 95) : randInt(105, 980));
+    } else {
+      setA(randInt(12, 89));
+      setB(randInt(12, 89));
+    }
+  }
 
   return (
     <div className="lab-layout view-enter">
@@ -1475,7 +1921,7 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
             </p>
             <h1>Interactive Sutra Workbench</h1>
             <p className="subtitle">
-              Experiment with deterministic Vedic algorithms and explore all 16 Sutras & 13 Sub-Sutras.
+              Experiment with deterministic Vedic algorithms and explore all 16 Sutras &amp; 13 Sub-Sutras.
             </p>
           </div>
           <div className="lab-engine-status">
@@ -1488,6 +1934,7 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
         <div className="sutra-tabs">
           {(['Nikhilam', 'Ekadhikena', 'Ekanyunena', 'Urdhva'] as const).map(name => (
             <button
+              type="button"
               key={name}
               className={active === name ? 'active' : ''}
               {...tabMagnetic}
@@ -1496,54 +1943,93 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
                 playClick();
                 spawnRipple(e, active !== name);
               }}
-              onClick={() => setActive(name)}
+              onClick={() => {
+                setActive(name);
+                setHoveredLabStep(null);
+              }}
             >
-              <span className="btn-inner" data-magnetic-inner>{name}</span>
+              <span className="btn-inner" data-magnetic-inner>
+                {name}
+              </span>
             </button>
           ))}
         </div>
 
-        <section
-          className="calculator-card sutra-workbench optical-surface"
-          key={active}
-          {...calculatorSurface}
-        >
-          {active === 'Ekadhikena' ? (
-            <>
-              <h2>Ekadhikena Purvena</h2>
-              <label className="field-label">Square any integer ending in 5</label>
-              <input type="number" value={square} onChange={e => setSquare(Number(e.target.value))} />
-            </>
-          ) : active === 'Ekanyunena' ? (
-            <>
-              <h2>Ekanyunena Purvena</h2>
-              <label className="field-label">Multiply an integer by 9, 99, 999, or 9999</label>
-              <div className="number-inputs">
-                <input type="number" value={a} min={1} onChange={e => setA(Number(e.target.value))} />
-                <span>×</span>
-                <select value={nineDigits} onChange={e => setNineDigits(Number(e.target.value))}>
-                  {[1, 2, 3, 4].map(digits => (
-                    <option key={digits} value={digits}>
-                      {'9'.repeat(digits)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </>
-          ) : (
-            <>
-              <h2>{active === 'Nikhilam' ? 'Nikhilam Navatashcaramam' : 'Urdhva-Tiryagbhyam'}</h2>
-              <label className="field-label">
+        <section className="calculator-card sutra-workbench optical-surface" key={active} {...calculatorSurface}>
+          <div className="workbench-top">
+            <div>
+              <h2>
                 {active === 'Nikhilam'
-                  ? 'Dynamic base selection near powers of 10'
-                  : 'Universal vertical-and-crosswise digit convolution'}
+                  ? 'Nikhilam Navatashcaramam'
+                  : active === 'Ekadhikena'
+                    ? 'Ekadhikena Purvena'
+                    : active === 'Ekanyunena'
+                      ? 'Ekanyunena Purvena'
+                      : 'Urdhva-Tiryagbhyam'}
+              </h2>
+              <label className="field-label">
+                {active === 'Ekadhikena'
+                  ? 'Square any integer ending in 5'
+                  : active === 'Ekanyunena'
+                    ? 'Multiply an integer by 9, 99, 999, or 9999'
+                    : active === 'Nikhilam'
+                      ? 'Dynamic base selection near powers of 10'
+                      : 'Universal vertical-and-crosswise digit convolution'}
               </label>
-              <div className="number-inputs">
-                <input type="number" value={a} onChange={e => setA(Number(e.target.value))} />
-                <span>×</span>
-                <input type="number" value={b} onChange={e => setB(Number(e.target.value))} />
-              </div>
-            </>
+            </div>
+            <button type="button" className="mini-toggle" onClick={randomizeLab}>
+              <Shuffle size={12} /> Randomize
+            </button>
+          </div>
+
+          <div className="lab-presets">
+            {active === 'Nikhilam' ? (
+              <>
+                <button type="button" onClick={() => { setA(97); setB(94); }}>97 × 94</button>
+                <button type="button" onClick={() => { setA(104); setB(108); }}>104 × 108</button>
+                <button type="button" onClick={() => { setA(996); setB(989); }}>996 × 989</button>
+              </>
+            ) : active === 'Ekadhikena' ? (
+              <>
+                <button type="button" onClick={() => setSquare(65)}>65²</button>
+                <button type="button" onClick={() => setSquare(125)}>125²</button>
+                <button type="button" onClick={() => setSquare(995)}>995²</button>
+              </>
+            ) : active === 'Ekanyunena' ? (
+              <>
+                <button type="button" onClick={() => { setA(37); setNineDigits(2); }}>37 × 99</button>
+                <button type="button" onClick={() => { setA(458); setNineDigits(3); }}>458 × 999</button>
+                <button type="button" onClick={() => { setA(7321); setNineDigits(4); }}>7321 × 9999</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => { setA(23); setB(41); }}>23 × 41</button>
+                <button type="button" onClick={() => { setA(124); setB(235); }}>124 × 235</button>
+                <button type="button" onClick={() => { setA(87); setB(64); }}>87 × 64</button>
+              </>
+            )}
+          </div>
+
+          {active === 'Ekadhikena' ? (
+            <input type="number" value={square} onChange={e => setSquare(Number(e.target.value))} />
+          ) : active === 'Ekanyunena' ? (
+            <div className="number-inputs">
+              <input type="number" value={a} min={1} onChange={e => setA(Number(e.target.value))} />
+              <span>×</span>
+              <select value={nineDigits} onChange={e => setNineDigits(Number(e.target.value))}>
+                {[1, 2, 3, 4].map(digits => (
+                  <option key={digits} value={digits}>
+                    {'9'.repeat(digits)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="number-inputs">
+              <input type="number" value={a} onChange={e => setA(Number(e.target.value))} />
+              <span>×</span>
+              <input type="number" value={b} onChange={e => setB(Number(e.target.value))} />
+            </div>
           )}
 
           {local.answer !== null ? (
@@ -1552,12 +2038,24 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
                 <span className="answer-prefix">=</span>
                 {answerDisplay}
               </div>
+
+              <SutraDiagram
+                sutra={activeSutraId}
+                numbers={diagramNumbers}
+                activeStep={hoveredLabStep}
+                className="lab-workbench-diagram"
+              />
+
               <div className="lab-steps">
                 {local.steps.map((step, i) => (
                   <div
                     key={`${step.title}-${i}`}
                     style={{ animationDelay: `${i * 45}ms` }}
-                    onPointerEnter={playHoverTick}
+                    onPointerEnter={() => {
+                      playHoverTick();
+                      setHoveredLabStep(i);
+                    }}
+                    onPointerLeave={() => setHoveredLabStep(null)}
                   >
                     <span>{String(i + 1).padStart(2, '0')}</span>
                     <div>
@@ -1585,6 +2083,21 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
             placeholder="Search all 16 Vedic Sutras by Sanskrit name or meaning..."
           />
         </div>
+        <div className="category-pills">
+          {(['All', 'Arithmetic', 'Algebra', 'Calculus'] as const).map(cat => (
+            <button
+              key={cat}
+              type="button"
+              className={category === cat ? 'active' : ''}
+              onClick={() => {
+                playClick();
+                setCategory(cat);
+              }}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
       </main>
 
       <aside className="sutra-list">
@@ -1597,6 +2110,7 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
         {selectedSutra ? (
           <div className="sutra-detail">
             <button
+              type="button"
               className="detail-close"
               onPointerDown={e => spawnRipple(e)}
               onClick={() => setSelectedSutra(null)}
@@ -1604,8 +2118,9 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
             >
               <X size={15} />
             </button>
-            <strong>{selectedSutra[0]}</strong>
-            <p>{selectedSutra[1]}</p>
+            {selectedSutra.sanskrit ? <span className="sutra-detail-sanskrit">{selectedSutra.sanskrit}</span> : null}
+            <strong>{selectedSutra.name}</strong>
+            <p>{selectedSutra.meaning}</p>
             <button
               type="button"
               className="try-sutra-btn"
@@ -1613,36 +2128,47 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
                 playClick();
                 spawnRipple(e, true);
               }}
-              onClick={() => onSendToAI(selectedSutra[2], selectedSutra[0])}
+              onClick={() => onSendToAI(selectedSutra.example, selectedSutra.name, true)}
             >
               Try in AI Solver <ArrowRight size={13} />
             </button>
           </div>
         ) : null}
 
-        {filtered.map(([name, meaning, example], i) => (
+        {filtered.map((item, i) => (
           <button
-            key={name}
-            className={`sutra-item ${selectedSutra?.[0] === name ? 'selected' : ''}`}
+            type="button"
+            key={item.name}
+            className={`sutra-item ${selectedSutra?.name === item.name ? 'selected' : ''}`}
             onPointerEnter={playHoverTick}
             onPointerDown={e => {
               playClick();
               spawnRipple(e);
             }}
-            onClick={() => setSelectedSutra([name, meaning, example])}
+            onClick={() => setSelectedSutra(item)}
           >
             <span>{String(i + 1).padStart(2, '0')}</span>
             <div>
-              <strong>{name}</strong>
-              <p>{meaning}</p>
+              <strong>{item.name}</strong>
+              <p>{item.meaning}</p>
             </div>
           </button>
         ))}
 
         <h3 className="sub-heading">13 Sub-Sutras (Upasutras)</h3>
         <div className="sub-grid">
-          {SUB_SUTRAS.map(name => (
-            <span key={name}>{name}</span>
+          {SUB_SUTRAS_CATALOG.map(sub => (
+            <button
+              type="button"
+              key={sub.name}
+              className={selectedSutra?.name === sub.name ? 'active' : ''}
+              onClick={() => {
+                playClick();
+                setSelectedSutra({ name: sub.name, meaning: sub.meaning, example: sub.prompt });
+              }}
+            >
+              {sub.name}
+            </button>
           ))}
         </div>
       </aside>
@@ -1650,12 +2176,23 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
   );
 }
 
-function madhavaPi(terms: number) {
+function madhavaPiSeries(terms: number, accelerated: boolean) {
   let sum = 0;
+  const points: number[] = [];
+  const sampleStride = Math.max(1, Math.floor(terms / 48));
   for (let k = 0; k < terms; k++) {
     sum += (k % 2 === 0 ? 1 : -1) / (2 * k + 1);
+    if (k % sampleStride === 0 || k === terms - 1) {
+      const sign = k % 2 === 0 ? -1 : 1;
+      const n = 2 * (k + 1);
+      const correction = accelerated ? sign * (n / (n * n + 1)) : 0;
+      points.push(4 * (sum + correction));
+    }
   }
-  return 4 * sum;
+  const lastSign = (terms - 1) % 2 === 0 ? -1 : 1;
+  const lastN = 2 * terms;
+  const finalCorrection = accelerated ? lastSign * (lastN / (lastN * lastN + 1)) : 0;
+  return { value: 4 * (sum + finalCorrection), points };
 }
 
 function binomial(n: number, k: number) {
@@ -1669,22 +2206,60 @@ function ScripturesLab() {
   const [kap, setKap] = useState(3524);
   const [word, setWord] = useState('Mayamalavagowla');
   const [meruRows, setMeruRows] = useState(6);
+  const [hoveredMeru, setHoveredMeru] = useState<{ r: number; c: number } | null>(null);
+  const [showFibDiagonal, setShowFibDiagonal] = useState(false);
+  const [fibIdx, setFibIdx] = useState(4);
   const [sideA, setSideA] = useState(3);
   const [sideB, setSideB] = useState(4);
-  const [piTerms, setPiTerms] = useState(120);
+  const [showAreaSquares, setShowAreaSquares] = useState(false);
+  const [piTerms, setPiTerms] = useState(60);
+  const [madhavaAccel, setMadhavaAccel] = useState(true);
   const toolSurface = useSpotlightSurface({ tilt: true });
 
   const cubeResult = useMemo(() => cubeRoot(cube), [cube]);
-  const kapResult = useMemo(() => kaprekar(kap), [kap]);
-  const kataResult = useMemo(() => katapayadi(word), [word]);
-  const piValue = useMemo(() => madhavaPi(piTerms), [piTerms]);
+  const kapResult = useMemo(() => kaprekarDetailed(kap), [kap]);
+  const kataResult = useMemo(() => katapayadiDetailed(word), [word]);
+  const piSeries = useMemo(() => madhavaPiSeries(piTerms, madhavaAccel), [piTerms, madhavaAccel]);
 
   const hypotenuse = Math.sqrt(sideA * sideA + sideB * sideB);
   const baudhayana = 1 + 1 / 3 + 1 / (3 * 4) - 1 / (3 * 4 * 34);
   const sqrt2Error = Math.abs((baudhayana - Math.SQRT2) / Math.SQRT2) * 100;
-  const piError = Math.abs(piValue - Math.PI);
-  const triangleX = 28 + Math.round((200 * sideA) / 12);
-  const triangleTop = 128 - Math.round((98 * sideB) / 12);
+  const piError = Math.abs(piSeries.value - Math.PI);
+
+  const scale = showAreaSquares ? 7.2 : 13;
+  const originX = showAreaSquares ? 86 : 42;
+  const originY = showAreaSquares ? 128 : 130;
+  const triW = Math.round(sideA * scale);
+  const triH = Math.round(sideB * scale);
+  const vx = originX + triW;
+  const vy = originY - triH;
+
+  // Madhava polyline points
+  const chartW = 340;
+  const chartH = 92;
+  const minPi = 2.6;
+  const maxPi = 4.05;
+  const yForPi = (val: number) =>
+    Math.max(6, Math.min(chartH - 6, chartH - ((val - minPi) / (maxPi - minPi)) * (chartH - 12) - 6));
+  const piRefY = yForPi(Math.PI);
+  const polylinePts = piSeries.points
+    .map((val, idx) => {
+      const x = piSeries.points.length <= 1 ? chartW / 2 : 10 + (idx / (piSeries.points.length - 1)) * (chartW - 20);
+      return `${x.toFixed(1)},${yForPi(val).toFixed(1)}`;
+    })
+    .join(' ');
+
+  const fibSum = useMemo(() => {
+    let sum = 0;
+    for (let k = 0; k <= Math.floor(fibIdx / 2); k++) {
+      const r = fibIdx - k;
+      if (r < meruRows && k <= r) sum += binomial(r, k);
+    }
+    return sum;
+  }, [fibIdx, meruRows]);
+
+  const cubePrefix = Math.floor(Math.max(0, cube) / 1000);
+  const cubeTail = String(Math.max(0, cube) % 1000).padStart(3, '0');
 
   return (
     <div className="scripture-page view-enter">
@@ -1695,8 +2270,8 @@ function ScripturesLab() {
           </p>
           <h1>Mathematics Across Indian Tradition</h1>
           <p className="subtitle">
-            Explore geometry from the <em>Sulba Sutras</em>, infinite series from the Kerala School, Pingala’s
-            combinatorics, and classical number ciphers.
+            Explore geometry from the <em>Sulba Sutras</em>, Kerala School series convergence, Pingala’s combinatorics,
+            and classical number ciphers.
           </p>
         </div>
         <div className="scripture-engine-status">
@@ -1717,6 +2292,23 @@ function ScripturesLab() {
               <span className="tool-era">c. 800 BCE · Yajurveda Altar Geometry</span>
             </div>
           </div>
+          <div className="tool-controls-inline">
+            <div className="preset-row" style={{ marginBottom: 0 }}>
+              <button type="button" onClick={() => { setSideA(3); setSideB(4); }}>(3, 4, 5)</button>
+              <button type="button" onClick={() => { setSideA(5); setSideB(12); }}>(5, 12, 13)</button>
+              <button type="button" onClick={() => { setSideA(8); setSideB(10); }}>(8, 10)</button>
+            </div>
+            <button
+              type="button"
+              className={`mini-toggle ${showAreaSquares ? 'active' : ''}`}
+              onClick={() => {
+                playClick();
+                setShowAreaSquares(v => !v);
+              }}
+            >
+              Area Squares {showAreaSquares ? 'ON' : 'OFF'}
+            </button>
+          </div>
           <div className="slider-row">
             <label>
               Base a = {sideA}
@@ -1727,27 +2319,39 @@ function ScripturesLab() {
               <input type="range" min={1} max={12} value={sideB} onChange={e => setSideB(Number(e.target.value))} />
             </label>
           </div>
-          <svg className="triangle-svg" viewBox="0 0 280 155" role="img" aria-label="Right triangle visualization">
+          <svg className="triangle-svg" viewBox="0 0 320 185" role="img" aria-label="Right triangle visualization">
             <defs>
               <pattern id="geometry-grid" width="12" height="12" patternUnits="userSpaceOnUse">
-                <path d="M 12 0 L 0 0 0 12" fill="none" stroke="#ea580c" strokeOpacity="0.1" strokeWidth="0.6" />
+                <path d="M 12 0 L 0 0 0 12" fill="none" stroke="#ea580c" strokeOpacity="0.12" strokeWidth="0.6" />
               </pattern>
             </defs>
+            {showAreaSquares ? (
+              <>
+                <rect x={originX} y={originY} width={triW} height={triW} fill="rgba(234,88,12,0.08)" stroke="#ea580c" strokeOpacity="0.45" strokeWidth="1" />
+                <rect x={vx} y={vy} width={triH} height={triH} fill="rgba(234,88,12,0.08)" stroke="#ea580c" strokeOpacity="0.45" strokeWidth="1" />
+              </>
+            ) : null}
             <polygon
-              points={`28,128 ${triangleX},128 ${triangleX},${triangleTop}`}
+              points={`${originX},${originY} ${vx},${originY} ${vx},${vy}`}
               fill="url(#geometry-grid)"
               stroke="#ea580c"
-              strokeWidth="3"
+              strokeWidth="2.8"
               strokeLinejoin="round"
             />
-            <text x={(28 + triangleX) / 2 - 12} y="146">
+            <polyline
+              points={`${vx - 10},${originY} ${vx - 10},${originY - 10} ${vx},${originY - 10}`}
+              fill="none"
+              stroke="#ea580c"
+              strokeWidth="1.5"
+            />
+            <text x={Math.min(270, (originX + vx) / 2 - 12)} y={originY + 16}>
               a = {sideA}
             </text>
-            <text x={triangleX + 8} y={(128 + triangleTop) / 2 + 4}>
+            <text x={Math.min(266, vx + 8)} y={(originY + vy) / 2 + 4}>
               b = {sideB}
             </text>
-            <text x={(28 + triangleX) / 2 - 18} y={(128 + triangleTop) / 2 - 8}>
-              c = {hypotenuse.toFixed(3)}
+            <text x={Math.max(8, (originX + vx) / 2 - 36)} y={Math.max(14, (originY + vy) / 2 - 8)}>
+              c = {hypotenuse.toFixed(2)}
             </text>
           </svg>
           <div className="formula-box bg-optical-dots">
@@ -1769,21 +2373,42 @@ function ScripturesLab() {
               <span className="tool-era">14th CE · Kerala School of Mathematics</span>
             </div>
           </div>
-          <label className="range-label">
-            Series Terms: {piTerms}
-            <input
-              type="range"
-              min={1}
-              max={500}
-              value={piTerms}
-              onChange={e => setPiTerms(Number(e.target.value))}
-            />
-          </label>
-          <div className="answer-box">{piValue.toFixed(8)}</div>
+          <div className="tool-controls-inline">
+            <label className="range-label" style={{ flex: 1 }}>
+              Series Terms: {piTerms}
+              <input
+                type="range"
+                min={1}
+                max={500}
+                value={piTerms}
+                onChange={e => setPiTerms(Number(e.target.value))}
+              />
+            </label>
+            <button
+              type="button"
+              className={`mini-toggle ${madhavaAccel ? 'active' : ''}`}
+              onClick={() => {
+                playClick();
+                setMadhavaAccel(v => !v);
+              }}
+            >
+              Madhava Correction {madhavaAccel ? 'ON' : 'OFF'}
+            </button>
+          </div>
+          <div className="answer-box">{piSeries.value.toFixed(8)}</div>
+          <svg className="madhava-svg" viewBox={`0 0 ${chartW} ${chartH}`} role="img" aria-label="Madhava series convergence waveform">
+            <line x1="8" y1={piRefY} x2={chartW - 8} y2={piRefY} stroke="currentColor" strokeOpacity="0.28" strokeDasharray="4 4" />
+            <text x="12" y={piRefY - 4} fontSize="9" fill="currentColor" opacity="0.6" fontFamily="var(--font-mono)">
+              π = 3.141592…
+            </text>
+            {piSeries.points.length > 1 ? (
+              <polyline fill="none" stroke="#ea580c" strokeWidth="2" strokeLinejoin="round" points={polylinePts} />
+            ) : null}
+          </svg>
           <div className="formula-box bg-optical-dots">
-            <strong>Convergence Check</strong>
+            <strong>{madhavaAccel ? 'Madhava-Accelerated Convergence' : 'Raw Leibniz-Madhava Partial Sum'}</strong>
             <small>
-              Modern π: {Math.PI.toFixed(8)} · Absolute diff: {piError.toFixed(6)}
+              Modern π: {Math.PI.toFixed(8)} · Absolute diff: {piError.toFixed(7)}
             </small>
           </div>
         </section>
@@ -1798,7 +2423,16 @@ function ScripturesLab() {
               <span className="tool-era">Vedic Upasutra · Exact Cube Inspection</span>
             </div>
           </div>
+          <div className="preset-row">
+            <button type="button" onClick={() => setCube(1728)}>1728</button>
+            <button type="button" onClick={() => setCube(3375)}>3375</button>
+            <button type="button" onClick={() => setCube(19683)}>19683</button>
+            <button type="button" onClick={() => setCube(103823)}>103823</button>
+          </div>
           <input type="number" value={cube} onChange={e => setCube(Number(e.target.value))} />
+          <span className="cube-split-badge">
+            Split: <b>{cubePrefix}</b> | <b>{cubeTail}</b>
+          </span>
           <div style={{ marginTop: 4 }}>
             <div className="answer-box">{cubeResult.exact ? cubeResult.result : cubeResult.error || 'Not a perfect cube'}</div>
           </div>
@@ -1819,20 +2453,39 @@ function ScripturesLab() {
               <span className="tool-era">1949 · D. R. Kaprekar (Indian Number Theory)</span>
             </div>
           </div>
-          <input
-            type="number"
-            min={1000}
-            max={9999}
-            value={kap}
-            onChange={e => setKap(Number(e.target.value) || 0)}
-          />
+          <div className="tool-controls-inline">
+            <input
+              type="number"
+              min={1000}
+              max={9999}
+              value={kap}
+              onChange={e => setKap(Number(e.target.value) || 0)}
+            />
+            <button
+              type="button"
+              className="mini-toggle"
+              onClick={() => {
+                playClick();
+                let next = randInt(1000, 9998);
+                while (new Set(String(next).split('')).size === 1) next = randInt(1000, 9998);
+                setKap(next);
+              }}
+            >
+              <Shuffle size={12} /> Random 4-Digit
+            </button>
+          </div>
           {kapResult.error ? (
             <p className="error-inline">{kapResult.error}</p>
           ) : (
             <div className="convergence">
-              {kapResult.steps.map((n, i) => (
-                <span className="convergence-step" key={`${n}-${i}`}>
-                  <span className={`convergence-pill ${n === 6174 ? 'final' : ''}`}>{n}</span>
+              {kapResult.steps.map((step, i) => (
+                <span className="convergence-step" key={`${step.result}-${i}`}>
+                  <span className={`convergence-pill ${step.result === 6174 ? 'final' : ''}`}>
+                    <span>{step.result}</span>
+                    <small>
+                      {step.desc} − {step.asc}
+                    </small>
+                  </span>
                   {i < kapResult.steps.length - 1 ? <ArrowRight size={13} className="convergence-arrow" /> : null}
                 </span>
               ))}
@@ -1847,39 +2500,21 @@ function ScripturesLab() {
             </div>
             <div>
               <h2>Katapayadi Sankhya Cipher</h2>
-              <span className="tool-era">Ancient Chronogram & Carnatic Raga Encoding</span>
+              <span className="tool-era">Ancient Chronogram &amp; Carnatic Raga Encoding</span>
             </div>
           </div>
           <div className="preset-row">
-            <button
-              type="button"
-              onPointerDown={e => {
-                playClick();
-                spawnRipple(e);
-              }}
-              onClick={() => setWord('Mayamalavagowla')}
-            >
+            <button type="button" onPointerDown={e => { playClick(); spawnRipple(e); }} onClick={() => setWord('Mayamalavagowla')}>
               Mayamalavagowla → 15
             </button>
-            <button
-              type="button"
-              onPointerDown={e => {
-                playClick();
-                spawnRipple(e);
-              }}
-              onClick={() => setWord('Rama')}
-            >
+            <button type="button" onPointerDown={e => { playClick(); spawnRipple(e); }} onClick={() => setWord('Rama')}>
               Rama → 52
             </button>
-            <button
-              type="button"
-              onPointerDown={e => {
-                playClick();
-                spawnRipple(e);
-              }}
-              onClick={() => setWord('Ganita')}
-            >
+            <button type="button" onPointerDown={e => { playClick(); spawnRipple(e); }} onClick={() => setWord('Ganita')}>
               Ganita → 153
+            </button>
+            <button type="button" onPointerDown={e => { playClick(); spawnRipple(e); }} onClick={() => setWord('Kalyani')}>
+              Kalyani → 5131
             </button>
           </div>
           <input
@@ -1888,6 +2523,14 @@ function ScripturesLab() {
             placeholder="Enter a Sanskrit or English word..."
             style={{ width: '100%' }}
           />
+          <div className="token-strip" aria-label="Consonant digit breakdown">
+            {kataResult.tokens.slice(0, 14).map((tok, i) => (
+              <span key={i} className={`token-pill ${tok.digit === null ? 'ignored' : ''}`}>
+                {tok.token}
+                {tok.digit !== null ? <b>→{tok.digit}</b> : null}
+              </span>
+            ))}
+          </div>
           <div className="cipher-grid">
             <div className="cipher-box">
               <span>Left-to-right</span>
@@ -1910,31 +2553,80 @@ function ScripturesLab() {
               <span className="tool-era">c. 300 BCE · Chandas Shastra Combinatorics</span>
             </div>
           </div>
-          <label className="range-label">
-            Rows: {meruRows}
-            <input
-              type="range"
-              min={2}
-              max={8}
-              value={meruRows}
-              onChange={e => setMeruRows(Number(e.target.value))}
-            />
-          </label>
+          <div className="tool-controls-inline">
+            <label className="range-label" style={{ flex: 1 }}>
+              Rows: {meruRows}
+              <input
+                type="range"
+                min={2}
+                max={8}
+                value={meruRows}
+                onChange={e => {
+                  const nextRows = Number(e.target.value);
+                  setMeruRows(nextRows);
+                  setFibIdx(f => Math.min(f, nextRows - 1));
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              className={`mini-toggle ${showFibDiagonal ? 'active' : ''}`}
+              onClick={() => {
+                playClick();
+                setShowFibDiagonal(v => !v);
+              }}
+            >
+              Virahanka Diagonal {showFibDiagonal ? `= ${fibSum}` : ''}
+            </button>
+          </div>
+          {showFibDiagonal ? (
+            <label className="range-label" style={{ marginBottom: 4 }}>
+              Diagonal Index n = {fibIdx} (Fibonacci Sum = {fibSum})
+              <input
+                type="range"
+                min={0}
+                max={meruRows - 1}
+                value={fibIdx}
+                onChange={e => setFibIdx(Number(e.target.value))}
+              />
+            </label>
+          ) : null}
           <div className="meru">
             {Array.from({ length: meruRows }).map((_, r) => (
-              <div key={r}>
-                {Array.from({ length: r + 1 }).map((__, c) => (
-                  <span
-                    key={c}
-                    style={{ animationDelay: `${(r + c) * 35}ms` }}
-                    onPointerEnter={playHoverTick}
-                  >
-                    {binomial(r, c)}
-                  </span>
-                ))}
+              <div className="meru-row" key={r}>
+                {Array.from({ length: r + 1 }).map((__, c) => {
+                  const isActive = hoveredMeru?.r === r && hoveredMeru?.c === c;
+                  const isParent =
+                    hoveredMeru !== null &&
+                    hoveredMeru.r === r + 1 &&
+                    (hoveredMeru.c === c || hoveredMeru.c === c + 1);
+                  const isFib = showFibDiagonal && r + c === fibIdx;
+                  return (
+                    <span
+                      key={c}
+                      className={`meru-cell ${isActive ? 'meru-active' : ''} ${isParent ? 'meru-parent' : ''} ${isFib ? 'meru-fib' : ''}`}
+                      onPointerEnter={() => {
+                        playHoverTick();
+                        setHoveredMeru({ r, c });
+                      }}
+                      onPointerLeave={() => setHoveredMeru(null)}
+                    >
+                      {binomial(r, c)}
+                    </span>
+                  );
+                })}
+                <span className="meru-row-sum">= {2 ** r}</span>
               </div>
             ))}
           </div>
+          {hoveredMeru && hoveredMeru.r > 0 ? (
+            <p className="tool-note">
+              <strong>Addend Identity:</strong>{' '}
+              {hoveredMeru.c > 0 ? binomial(hoveredMeru.r - 1, hoveredMeru.c - 1) : 0} +{' '}
+              {hoveredMeru.c < hoveredMeru.r ? binomial(hoveredMeru.r - 1, hoveredMeru.c) : 0} ={' '}
+              {binomial(hoveredMeru.r, hoveredMeru.c)}
+            </p>
+          ) : null}
         </section>
       </div>
     </div>
@@ -1942,6 +2634,7 @@ function ScripturesLab() {
 }
 
 type QuizKind = 'nikhilam' | 'ekadhikena' | 'ekanyunena' | 'urdhva' | 'vilokanam';
+type QuizFocus = 'all' | QuizKind;
 
 type GeneratedQuestion = {
   id: string;
@@ -2004,14 +2697,14 @@ function buildChoices(answer: number, kind: QuizKind): number[] {
   return shuffle(Array.from(picked));
 }
 
-function createQuestionByKind(kind: QuizKind): GeneratedQuestion {
+function createQuestionByKind(kind: QuizKind, hard: boolean): GeneratedQuestion {
   if (kind === 'nikhilam') {
-    const mode = randInt(0, 2);
-    const a = mode === 0 ? randInt(88, 99) : mode === 1 ? randInt(101, 112) : randInt(989, 999);
-    const b = mode === 0 ? randInt(88, 99) : mode === 1 ? randInt(101, 112) : randInt(989, 999);
+    const mode = hard ? randInt(1, 2) : randInt(0, 2);
+    const a = mode === 0 ? randInt(88, 99) : mode === 1 ? randInt(101, 114) : randInt(986, 999);
+    const b = mode === 0 ? randInt(88, 99) : mode === 1 ? randInt(101, 114) : randInt(986, 999);
     const solved = nikhilam(a, b);
     const base = pickBase(a, b);
-    const answer = solved.answer ?? a * b;
+    const answer = Number(solved.answer ?? a * b);
     return {
       id: `nikhilam:${Math.min(a, b)}x${Math.max(a, b)}`,
       q: `${a} × ${b}`,
@@ -2026,10 +2719,10 @@ function createQuestionByKind(kind: QuizKind): GeneratedQuestion {
   }
 
   if (kind === 'ekadhikena') {
-    const p = randInt(1, 19);
+    const p = hard ? randInt(10, 24) : randInt(1, 16);
     const n = p * 10 + 5;
     const solved = ekadhikenaSquare(n);
-    const answer = solved.answer ?? n * n;
+    const answer = Number(solved.answer ?? n * n);
     return {
       id: `ekadhikena:${n}`,
       q: `${n}²`,
@@ -2044,11 +2737,11 @@ function createQuestionByKind(kind: QuizKind): GeneratedQuestion {
   }
 
   if (kind === 'ekanyunena') {
-    const digits = Math.random() < 0.65 ? 2 : 3;
+    const digits = hard || Math.random() < 0.4 ? 3 : 2;
     const n = digits === 2 ? randInt(12, 98) : randInt(105, 998);
     const nines = '9'.repeat(digits);
     const solved = ekanyunena(n, digits);
-    const answer = solved.answer ?? n * Number(nines);
+    const answer = Number(solved.answer ?? n * Number(nines));
     return {
       id: `ekanyunena:${n}x${nines}`,
       q: `${n} × ${nines}`,
@@ -2063,11 +2756,11 @@ function createQuestionByKind(kind: QuizKind): GeneratedQuestion {
   }
 
   if (kind === 'urdhva') {
-    const a = randInt(12, 48);
-    let b = randInt(12, 48);
+    const a = hard ? randInt(24, 78) : randInt(12, 46);
+    let b = hard ? randInt(24, 78) : randInt(12, 46);
     if (a === b && a % 10 === 5) b += 1;
     const solved = urdhva(a, b);
-    const answer = solved.answer ?? a * b;
+    const answer = Number(solved.answer ?? a * b);
     return {
       id: `urdhva:${Math.min(a, b)}x${Math.max(a, b)}`,
       q: `${a} × ${b}`,
@@ -2081,7 +2774,7 @@ function createQuestionByKind(kind: QuizKind): GeneratedQuestion {
     };
   }
 
-  const root = randInt(11, 39);
+  const root = hard ? randInt(21, 59) : randInt(11, 35);
   const cube = root ** 3;
   const solved = cubeRoot(cube);
   return {
@@ -2112,23 +2805,26 @@ function saveSeenQuestionIds(seen: Set<string>) {
     const list = Array.from(seen).slice(-250);
     localStorage.setItem('iks-quiz-seen', JSON.stringify(list));
   } catch {
-    // Ignore browser storage quota or privacy errors.
+    // Ignore browser storage errors.
   }
 }
 
-function generateFreshQuizRound(count = 5): GeneratedQuestion[] {
+function generateFreshQuizRound(count: number, focus: QuizFocus, hard: boolean): GeneratedQuestion[] {
   const seen = loadSeenQuestionIds();
   if (seen.size > 220) seen.clear();
 
-  const kinds = shuffle<QuizKind>(['nikhilam', 'ekadhikena', 'ekanyunena', 'urdhva', 'vilokanam']).slice(0, count);
+  const pool: QuizKind[] =
+    focus === 'all' ? ['nikhilam', 'ekadhikena', 'ekanyunena', 'urdhva', 'vilokanam'] : [focus];
   const round: GeneratedQuestion[] = [];
   const roundIds = new Set<string>();
 
-  for (const kind of kinds) {
-    let candidate = createQuestionByKind(kind);
+  for (let i = 0; i < count; i++) {
+    const kind = focus === 'all' ? shuffle(pool)[0] : focus;
+    const orderedKind = focus === 'all' && i < pool.length ? pool[i] : kind;
+    let candidate = createQuestionByKind(orderedKind, hard);
     for (let attempt = 0; attempt < 40; attempt++) {
       if (!seen.has(candidate.id) && !roundIds.has(candidate.id)) break;
-      candidate = createQuestionByKind(kind);
+      candidate = createQuestionByKind(orderedKind, hard);
     }
     round.push(candidate);
     roundIds.add(candidate.id);
@@ -2136,19 +2832,27 @@ function generateFreshQuizRound(count = 5): GeneratedQuestion[] {
   }
 
   saveSeenQuestionIds(seen);
-  return round;
+  return focus === 'all' ? shuffle(round) : round;
 }
 
 function Quiz() {
   const [bestScore, setBestScore] = useState(() => Number(localStorage.getItem('iks-best-score') || 0));
-  const [questions, setQuestions] = useState<GeneratedQuestion[]>(() => generateFreshQuizRound(5));
+  const [roundSize, setRoundSize] = useState<5 | 10>(5);
+  const [focus, setFocus] = useState<QuizFocus>('all');
+  const [hardMode, setHardMode] = useState(false);
+  const timeLimit = hardMode ? 12 : 20;
+
+  const [questions, setQuestions] = useState<GeneratedQuestion[]>(() => generateFreshQuizRound(5, 'all', false));
   const [sessionScore, setSessionScore] = useState(0);
+  const [streak, setStreak] = useState(0);
   const [questionIdx, setQuestionIdx] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [time, setTime] = useState(20);
   const [finished, setFinished] = useState(false);
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
   const [aiExplain, setAiExplain] = useState<Record<string, QuizAIState>>({});
+  const [copiedSummary, setCopiedSummary] = useState(false);
+
   const quizSurface = useSpotlightSurface({ tilt: false });
   const reviewSurface = useSpotlightSurface({ tilt: true });
   const quizSummarySurface = useSpotlightSurface({ tilt: true });
@@ -2162,26 +2866,32 @@ function Quiz() {
 
   const current = questions[questionIdx];
 
-  function pick(choice: number) {
-    if (selected !== null || time === 0 || finished) return;
-    setSelected(choice);
-    playClick();
-    if (choice === current.answer) {
-      setSessionScore(value => value + 1);
-      playSuccess();
-    } else {
-      playError();
-    }
-  }
+  const pick = useCallback(
+    (choice: number) => {
+      if (selected !== null || time === 0 || finished || !current) return;
+      setSelected(choice);
+      playClick();
+      if (choice === current.answer) {
+        setSessionScore(value => value + 1);
+        setStreak(s => s + 1);
+        playSuccess();
+      } else {
+        setStreak(0);
+        playError();
+      }
+    },
+    [current, finished, selected, time],
+  );
 
-  function nextQuestion() {
+  const nextQuestion = useCallback(() => {
+    if (!current) return;
     playClick();
     const attempt: QuizAttempt = {
       question: current,
       selected,
       timedOut: selected === null && time === 0,
       isCorrect: selected === current.answer,
-      timeSpent: 20 - time,
+      timeSpent: timeLimit - time,
     };
     const nextAttempts = [...attempts, attempt];
     setAttempts(nextAttempts);
@@ -2198,16 +2908,56 @@ function Quiz() {
 
     setQuestionIdx(value => value + 1);
     setSelected(null);
-    setTime(20);
-  }
+    setTime(timeLimit);
+  }, [attempts, bestScore, current, questionIdx, questions.length, selected, sessionScore, time, timeLimit]);
 
-  function startNewRound() {
+  useEffect(() => {
+    if (finished || !current) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (['1', '2', '3', '4'].includes(e.key) && selected === null && time > 0) {
+        const idx = Number(e.key) - 1;
+        if (current.choices[idx] !== undefined) {
+          e.preventDefault();
+          pick(current.choices[idx]);
+        }
+      } else if ((e.key === 'Enter' || e.key === ' ') && (selected !== null || time === 0)) {
+        e.preventDefault();
+        nextQuestion();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [current, finished, nextQuestion, pick, selected, time]);
+
+  function startCustomRound(nextSize = roundSize, nextFocus = focus, nextHard = hardMode) {
     playClick();
-    setQuestions(generateFreshQuizRound(5));
+    const nextLimit = nextHard ? 12 : 20;
+    setRoundSize(nextSize);
+    setFocus(nextFocus);
+    setHardMode(nextHard);
+    setQuestions(generateFreshQuizRound(nextSize, nextFocus, nextHard));
     setSessionScore(0);
+    setStreak(0);
     setQuestionIdx(0);
     setSelected(null);
-    setTime(20);
+    setTime(nextLimit);
+    setAttempts([]);
+    setAiExplain({});
+    setFinished(false);
+  }
+
+  function retryMissedQuestions() {
+    const missed = attempts.filter(a => !a.isCorrect).map(a => a.question);
+    if (!missed.length) return;
+    playClick();
+    setQuestions(missed);
+    setSessionScore(0);
+    setStreak(0);
+    setQuestionIdx(0);
+    setSelected(null);
+    setTime(timeLimit);
     setAttempts([]);
     setAiExplain({});
     setFinished(false);
@@ -2248,6 +2998,7 @@ function Quiz() {
       ? (attempts.reduce((sum, a) => sum + a.timeSpent, 0) / attempts.length).toFixed(1)
       : '0.0';
     const accuracy = questions.length ? Math.round((sessionScore / questions.length) * 100) : 0;
+    const missedCount = attempts.filter(a => !a.isCorrect).length;
 
     return (
       <div className="quiz-page view-enter">
@@ -2262,10 +3013,11 @@ function Quiz() {
             </p>
           </div>
           <button
+            type="button"
             className="next-button"
             {...nextMagnetic}
             onPointerDown={e => spawnRipple(e, true)}
-            onClick={startNewRound}
+            onClick={() => startCustomRound()}
           >
             <span className="btn-inner" data-magnetic-inner>
               <RefreshCw size={15} /> New Fresh Quiz
@@ -2275,24 +3027,35 @@ function Quiz() {
 
         <section className="quiz-summary-card optical-surface" {...quizSummarySurface}>
           <div className="summary-main">
-            <div className="completion-trophy"><Trophy size={34} /></div>
+            <div className="completion-trophy">
+              <Trophy size={34} />
+            </div>
             <div>
-              <h2>{sessionScore} / {questions.length}</h2>
+              <h2>
+                {sessionScore} / {questions.length}
+              </h2>
               <p className="quiz-sub" style={{ textAlign: 'left' }}>
                 {sessionScore === questions.length
                   ? 'Flawless run! Pure mental Vedic speed.'
-                  : sessionScore >= 3
-                    ? 'Solid work! Review the Vedic shortcuts below to hit 5/5.'
-                    : 'Great practice! Study the step-by-step Sutras below and try a fresh set.'}
+                  : sessionScore >= Math.ceil(questions.length * 0.6)
+                    ? 'Solid work! Review the Vedic shortcuts below to hit 100%.'
+                    : 'Great practice! Study the step-by-step Sutras below and retry.'}
               </p>
             </div>
           </div>
 
           <div className="summary-stats">
-            <div className="metric-tile accent"><span>Accuracy</span><strong>{accuracy}%</strong></div>
-            <div className="metric-tile"><span>Avg. Time</span><strong>{avgTime}s</strong></div>
+            <div className="metric-tile accent">
+              <span>Accuracy</span>
+              <strong>{accuracy}%</strong>
+            </div>
             <div className="metric-tile">
-              <span>Best Score</span><strong>{Math.max(bestScore, sessionScore)} / {questions.length}</strong>
+              <span>Avg. Time</span>
+              <strong>{avgTime}s</strong>
+            </div>
+            <div className="metric-tile">
+              <span>Best Score</span>
+              <strong>{Math.max(bestScore, sessionScore)}</strong>
             </div>
           </div>
         </section>
@@ -2305,35 +3068,54 @@ function Quiz() {
                 className={`review-card optical-surface ${item.isCorrect ? 'is-correct' : 'is-wrong'}`}
                 style={{ animationDelay: `${idx * 55}ms` }}
                 {...reviewSurface}
-                key={item.question.id}
+                key={`${item.question.id}-${idx}`}
               >
                 <div className="review-top">
                   <div className="review-title-group">
                     <span className={`review-status ${item.isCorrect ? 'ok' : item.timedOut ? 'timeout' : 'bad'}`}>
                       {item.isCorrect ? (
-                        <><Check size={12} /> Correct</>
+                        <>
+                          <Check size={12} /> Correct
+                        </>
                       ) : item.timedOut ? (
-                        <><Clock3 size={12} /> Timed Out</>
+                        <>
+                          <Clock3 size={12} /> Timed Out
+                        </>
                       ) : (
-                        <><X size={12} /> Incorrect</>
+                        <>
+                          <X size={12} /> Incorrect
+                        </>
                       )}
                     </span>
-                    <h3>Q{idx + 1}. {item.question.q} = <em>{item.question.answer}</em></h3>
+                    <h3>
+                      Q{idx + 1}. {item.question.q} = <em>{item.question.answer}</em>
+                    </h3>
                   </div>
-                  <div className="sutra-badge"><Sparkles size={13} /> {item.question.methodName}</div>
+                  <div className="sutra-badge">
+                    <Sparkles size={13} /> {item.question.methodName}
+                  </div>
                 </div>
 
                 <div className="review-answers-row">
-                  <span>Your answer:{' '}<strong className={item.isCorrect ? 'ans-ok' : 'ans-bad'}>
-                    {item.timedOut ? 'No answer (time up)' : item.selected}
-                  </strong></span>
-                  <span>Correct answer: <strong className="ans-ok">{item.question.answer}</strong></span>
-                  <span>Time: <strong>{item.timeSpent}s</strong></span>
+                  <span>
+                    Your answer:{' '}
+                    <strong className={item.isCorrect ? 'ans-ok' : 'ans-bad'}>
+                      {item.timedOut ? 'No answer (time up)' : item.selected}
+                    </strong>
+                  </span>
+                  <span>
+                    Correct answer: <strong className="ans-ok">{item.question.answer}</strong>
+                  </span>
+                  <span>
+                    Time: <strong>{item.timeSpent}s</strong>
+                  </span>
                 </div>
 
                 <div className="review-method-box">
                   <div className="review-method-head">
-                    <h4><ShieldCheck size={14} /> Vedic Method ({item.question.hint})</h4>
+                    <h4>
+                      <ShieldCheck size={14} /> Vedic Method ({item.question.hint})
+                    </h4>
                     <button
                       type="button"
                       className="ai-explain-btn"
@@ -2341,15 +3123,21 @@ function Quiz() {
                       onPointerDown={e => spawnRipple(e)}
                       onClick={() => {
                         playClick();
-                        explainWithAI(item.question);
+                        void explainWithAI(item.question);
                       }}
                     >
                       {aiState?.loading ? (
-                        <><RefreshCw className="spin" size={13} /> Asking AI...</>
+                        <>
+                          <RefreshCw className="spin" size={13} /> Asking AI...
+                        </>
                       ) : aiState?.data ? (
-                        <><Check size={13} /> AI Explained</>
+                        <>
+                          <Check size={13} /> AI Explained
+                        </>
                       ) : (
-                        <><Sparkles size={13} /> Explain with AI</>
+                        <>
+                          <Sparkles size={13} /> Explain with AI
+                        </>
                       )}
                     </button>
                   </div>
@@ -2358,7 +3146,9 @@ function Quiz() {
                     {item.question.steps.map((step, sIdx) => (
                       <div className="review-step" key={`${step.title}-${sIdx}`}>
                         <span>{String(sIdx + 1).padStart(2, '0')}</span>
-                        <div><strong>{step.title}:</strong> {step.detail}</div>
+                        <div>
+                          <strong>{step.title}:</strong> {step.detail}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2389,11 +3179,32 @@ function Quiz() {
         </div>
 
         <div className="review-bottom-actions">
+          {missedCount > 0 ? (
+            <button type="button" className="retry-missed-btn" onClick={retryMissedQuestions}>
+              <RotateCcw size={15} /> Retry {missedCount} Missed Question{missedCount > 1 ? 's' : ''}
+            </button>
+          ) : null}
           <button
+            type="button"
+            className="retry-missed-btn"
+            onClick={() => {
+              navigator.clipboard?.writeText(
+                `GanitaAI Speed Quiz: ${sessionScore}/${questions.length} (${accuracy}% accuracy, ${avgTime}s avg)`,
+              );
+              setCopiedSummary(true);
+              playSuccess();
+              window.setTimeout(() => setCopiedSummary(false), 1600);
+            }}
+          >
+            {copiedSummary ? <Check size={15} /> : <Copy size={15} />}
+            {copiedSummary ? 'Score Copied' : 'Copy Summary'}
+          </button>
+          <button
+            type="button"
             className="next-button"
             {...nextMagnetic}
             onPointerDown={e => spawnRipple(e, true)}
-            onClick={startNewRound}
+            onClick={() => startCustomRound()}
           >
             <span className="btn-inner" data-magnetic-inner>
               <RefreshCw size={15} /> Play Another Fresh Round
@@ -2412,18 +3223,62 @@ function Quiz() {
             <span className="section-index">04 //</span>Speed Quiz · Dynamic Generator
           </p>
           <h1>Vedic Math Sprint</h1>
-          <p className="subtitle">5 brand-new non-repeating problems across 5 Sutras under a 20-second clock.</p>
+          <p className="subtitle">
+            {roundSize} fresh non-repeating problems under a {timeLimit}-second clock. Press <kbd>1–4</kbd> &amp;{' '}
+            <kbd>Enter</kbd> for keyboard speed.
+          </p>
         </div>
         <div className="score-pill">
           <Trophy size={20} />
           <strong>{sessionScore}</strong>
           <span>session · {bestScore} best</span>
+          {streak >= 2 ? <span className="streak-chip">{streak}x Streak</span> : null}
+        </div>
+      </div>
+
+      <div className="quiz-controls-bar">
+        <div className="quiz-pill-group" role="group" aria-label="Sutra focus">
+          {(
+            [
+              ['all', 'All Sutras'],
+              ['nikhilam', 'Nikhilam'],
+              ['ekadhikena', 'Ekadhikena'],
+              ['ekanyunena', 'Ekanyunena'],
+              ['urdhva', 'Urdhva'],
+              ['vilokanam', 'Vilokanam'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={focus === id ? 'active' : ''}
+              onClick={() => startCustomRound(roundSize, id, hardMode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="quiz-pill-group" role="group" aria-label="Length and speed">
+          <button type="button" className={roundSize === 5 ? 'active' : ''} onClick={() => startCustomRound(5, focus, hardMode)}>
+            5Q
+          </button>
+          <button type="button" className={roundSize === 10 ? 'active' : ''} onClick={() => startCustomRound(10, focus, hardMode)}>
+            10Q
+          </button>
+          <button type="button" className={!hardMode ? 'active' : ''} onClick={() => startCustomRound(roundSize, focus, false)}>
+            20s
+          </button>
+          <button type="button" className={hardMode ? 'active' : ''} onClick={() => startCustomRound(roundSize, focus, true)}>
+            Master 12s
+          </button>
         </div>
       </div>
 
       <section className="quiz-card optical-surface" key={current.id} {...quizSurface}>
         <div className="quiz-meta">
-          <span>Question {questionIdx + 1} of {questions.length}</span>
+          <span>
+            Question {questionIdx + 1} of {questions.length}
+          </span>
           <span className={`timer ${time <= 5 ? 'urgent' : ''}`}>
             <Clock3 size={15} /> 00:{String(time).padStart(2, '0')}
           </span>
@@ -2431,6 +3286,9 @@ function Quiz() {
 
         <div className="progress">
           <span style={{ width: `${((questionIdx + 1) / questions.length) * 100}%` }} />
+        </div>
+        <div className="timer-drain" aria-hidden="true">
+          <span className={time <= 5 ? 'urgent' : ''} style={{ width: `${(time / timeLimit) * 100}%` }} />
         </div>
 
         <span className="quiz-hint-badge">{current.hint}</span>
@@ -2451,6 +3309,7 @@ function Quiz() {
             const selectedWrong = selected === choice && choice !== current.answer;
             return (
               <button
+                type="button"
                 key={i}
                 disabled={selected !== null || time === 0}
                 aria-pressed={selected === choice}
@@ -2459,6 +3318,7 @@ function Quiz() {
                 onPointerDown={e => spawnRipple(e)}
                 onClick={() => pick(choice)}
               >
+                <span className="choice-keycap">{i + 1}</span>
                 {choice}
               </button>
             );
@@ -2466,7 +3326,9 @@ function Quiz() {
         </div>
 
         <div className="quiz-footer">
+          <span className="quiz-kbd-tip">Keys 1–4 to answer · Enter for next</span>
           <button
+            type="button"
             className="next-button"
             {...nextMagnetic}
             disabled={selected === null && time > 0}
@@ -2484,12 +3346,30 @@ function Quiz() {
   );
 }
 
+const VALID_TABS = new Set<Tab>(['snap', 'sutras', 'scriptures', 'quiz']);
+
+function getInitialTab(): Tab {
+  if (typeof window === 'undefined') return 'snap';
+  const hash = window.location.hash.replace('#', '') as Tab;
+  return VALID_TABS.has(hash) ? hash : 'snap';
+}
+
+function getInitialTheme(): 'light' | 'dark' {
+  try {
+    return localStorage.getItem('ganita-theme') === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
 export default function App() {
-  const [tab, setTab] = useState<Tab>('snap');
+  const [tab, setTabState] = useState<Tab>(getInitialTab);
+  const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const [menuOpen, setMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [sfxEnabled, setSfxEnabledState] = useState(isSfxEnabled);
-  const [queued, setQueued] = useState<{ prompt: string; sutraName: string } | null>(null);
+  const [queued, setQueued] = useState<{ key: number; prompt: string; sutraName: string; autoSolve?: boolean } | null>(null);
   const coordRef = useRef<HTMLSpanElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const navUnderlineRef = useRef<HTMLSpanElement>(null);
@@ -2500,6 +3380,48 @@ export default function App() {
     { id: 'scriptures' as const, label: 'Scriptures Lab', icon: Landmark },
     { id: 'quiz' as const, label: 'Speed Quiz', icon: Trophy },
   ];
+
+  const setTab = useCallback((nextTab: Tab) => {
+    setTabState(nextTab);
+    if (window.location.hash !== `#${nextTab}`) {
+      window.history.pushState(null, '', `#${nextTab}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = window.location.hash.replace('#', '') as Tab;
+      if (VALID_TABS.has(next)) setTabState(next);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.dataset.theme = 'dark';
+    } else {
+      delete document.documentElement.dataset.theme;
+    }
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) metaTheme.setAttribute('content', theme === 'dark' ? '#09090b' : '#ffffff');
+    try {
+      localStorage.setItem('ganita-theme', theme);
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(v => !v);
+      }
+    };
+    window.addEventListener('keydown', onGlobalKey);
+    return () => window.removeEventListener('keydown', onGlobalKey);
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -2544,53 +3466,91 @@ export default function App() {
     };
   }, [menuOpen]);
 
-  function toggleSfx() {
-    const next = !sfxEnabled;
-    setSfxEnabledState(next);
-    setSfxEnabled(next);
-    playToggle(next);
-  }
+  const toggleSfx = useCallback(() => {
+    setSfxEnabledState(prev => {
+      const next = !prev;
+      setSfxEnabled(next);
+      playToggle(next);
+      return next;
+    });
+  }, []);
 
-  function sendToAI(example: string, sutraName: string) {
-    setQueued({ prompt: example, sutraName });
-    setTab('snap');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  const toggleTheme = useCallback(() => {
+    playClick();
+    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+  }, []);
 
-  const renderNavItems = () => nav.map(item => (
-    <button
-      key={item.id}
-      data-active={tab === item.id}
-      className={tab === item.id ? 'active' : ''}
-      onPointerDown={e => {
-        playClick();
-        spawnRipple(e);
-      }}
-      onClick={() => {
-        setTab(item.id);
-        setMenuOpen(false);
-      }}
-    >
-      <item.icon size={16} />
-      {item.label}
-    </button>
-  ));
+  const sendToAI = useCallback(
+    (example: string, sutraName: string, autoSolve = true) => {
+      setQueued(prev => ({ key: (prev?.key ?? 0) + 1, prompt: example, sutraName, autoSolve }));
+      setTab('snap');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [setTab],
+  );
+
+  const renderNavItems = () =>
+    nav.map(item => (
+      <button
+        type="button"
+        key={item.id}
+        data-active={tab === item.id}
+        className={tab === item.id ? 'active' : ''}
+        onPointerDown={e => {
+          playClick();
+          spawnRipple(e);
+        }}
+        onClick={() => {
+          setTab(item.id);
+          setMenuOpen(false);
+        }}
+      >
+        <item.icon size={16} />
+        {item.label}
+      </button>
+    ));
 
   return (
     <>
       <OpticalStage coordRef={coordRef} />
       <div className="optical-frame">
         <div className="registration-marks" aria-hidden="true">
-          <span className="registration-top-left"><Crosshair size={9} data-crosshair /></span>
-          <span className="registration-top-right"><Crosshair size={9} data-crosshair /></span>
-          <span className="registration-split"><Crosshair size={9} data-crosshair /></span>
-          <span className="registration-bottom-left"><Crosshair size={9} data-crosshair /></span>
-          <span className="registration-bottom-right"><Crosshair size={9} data-crosshair /></span>
+          <span className="registration-top-left">
+            <Crosshair size={9} data-crosshair />
+          </span>
+          <span className="registration-top-right">
+            <Crosshair size={9} data-crosshair />
+          </span>
+          <span className="registration-split">
+            <Crosshair size={9} data-crosshair />
+          </span>
+          <span className="registration-bottom-left">
+            <Crosshair size={9} data-crosshair />
+          </span>
+          <span className="registration-bottom-right">
+            <Crosshair size={9} data-crosshair />
+          </span>
         </div>
         <div className="app-shell">
           {helpOpen ? <HelpModal onClose={() => setHelpOpen(false)} /> : null}
+          {paletteOpen ? (
+            <CommandPalette
+              open={paletteOpen}
+              onClose={() => setPaletteOpen(false)}
+              onSelectTab={setTab}
+              onSendToAI={sendToAI}
+              onToggleTheme={toggleTheme}
+              onToggleSfx={toggleSfx}
+              theme={theme}
+              sfxEnabled={sfxEnabled}
+              sutras={SUTRAS}
+              subSutras={SUB_SUTRAS_CATALOG}
+            />
+          ) : null}
+
           <header className="topbar">
             <button
+              type="button"
               className="mobile-menu"
               onPointerDown={e => {
                 playClick();
@@ -2605,7 +3565,9 @@ export default function App() {
             </button>
 
             <div className="brand">
-              <div className="brand-mark"><span className="brand-glyph">ग</span></div>
+              <div className="brand-mark">
+                <span className="brand-glyph">ग</span>
+              </div>
               <span className="brand-name">
                 Ganita<span>AI</span>
               </span>
@@ -2617,12 +3579,43 @@ export default function App() {
             </nav>
 
             <div className="topbar-right">
-              <span ref={coordRef} className="pointer-coordinates" aria-hidden="true">X:0000 Y:0000</span>
-              <button className="sfx-toggle" onClick={toggleSfx} aria-label={`${sfxEnabled ? 'Disable' : 'Enable'} sound effects`} title="Toggle sound effects">
+              <span ref={coordRef} className="pointer-coordinates" aria-hidden="true">
+                X:0000 Y:0000
+              </span>
+              <button
+                type="button"
+                className="cmd-trigger"
+                onClick={() => {
+                  playClick();
+                  setPaletteOpen(true);
+                }}
+                aria-label="Open command palette"
+                title="Quick Jump (Ctrl+K / Cmd+K)"
+              >
+                <Search size={13} />
+                <kbd>⌘K</kbd>
+              </button>
+              <button
+                type="button"
+                className="theme-toggle"
+                onClick={toggleTheme}
+                aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+                title={`Switch to ${theme === 'light' ? 'Obsidian Dark' : 'Optical Light'} theme`}
+              >
+                {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+              </button>
+              <button
+                type="button"
+                className="sfx-toggle"
+                onClick={toggleSfx}
+                aria-label={`${sfxEnabled ? 'Disable' : 'Enable'} sound effects`}
+                title="Toggle sound effects"
+              >
                 {sfxEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
                 <span>SFX</span>
               </button>
               <button
+                type="button"
                 className="info-pill"
                 aria-label="About GanitaAI's neuro-symbolic architecture"
                 onPointerDown={e => {
@@ -2639,11 +3632,7 @@ export default function App() {
           </header>
 
           {menuOpen ? (
-            <div
-              className="mobile-nav-backdrop"
-              onClick={() => setMenuOpen(false)}
-              aria-hidden="true"
-            />
+            <div className="mobile-nav-backdrop" onClick={() => setMenuOpen(false)} aria-hidden="true" />
           ) : null}
           <aside
             id="mobile-navigation"
@@ -2653,8 +3642,12 @@ export default function App() {
           >
             <div className="mobile-drawer-head">
               <div className="mobile-drawer-brand">
-                <div className="brand-mark"><span className="brand-glyph">ग</span></div>
-                <span className="brand-name">Ganita<span>AI</span></span>
+                <div className="brand-mark">
+                  <span className="brand-glyph">ग</span>
+                </div>
+                <span className="brand-name">
+                  Ganita<span>AI</span>
+                </span>
               </div>
               <button
                 className="mobile-drawer-close"
@@ -2686,7 +3679,9 @@ export default function App() {
                   }}
                 >
                   <span className="drawer-item-index">{String(index + 1).padStart(2, '0')}</span>
-                  <span className="drawer-item-icon"><item.icon size={16} /></span>
+                  <span className="drawer-item-icon">
+                    <item.icon size={16} />
+                  </span>
                   <span className="drawer-item-label">{item.label}</span>
                   <ChevronRight className="drawer-item-arrow" size={14} />
                 </button>
@@ -2717,17 +3712,35 @@ export default function App() {
                 type="button"
                 className="drawer-sfx-toggle"
                 onPointerDown={e => spawnRipple(e)}
+                onClick={toggleTheme}
+              >
+                <span className="drawer-sfx-label">
+                  APPEARANCE <strong>{theme === 'light' ? 'OPTICAL WHITE' : 'OBSIDIAN DARK'}</strong>
+                </span>
+                {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+              </button>
+              <button
+                type="button"
+                className="drawer-sfx-toggle"
+                onPointerDown={e => spawnRipple(e)}
                 onClick={toggleSfx}
                 aria-label={`${sfxEnabled ? 'Disable' : 'Enable'} sound effects`}
               >
-                <span className="drawer-sfx-label">SOUND EFFECTS <strong>SFX: {sfxEnabled ? 'ON' : 'OFF'}</strong></span>
+                <span className="drawer-sfx-label">
+                  SOUND EFFECTS <strong>SFX: {sfxEnabled ? 'ON' : 'OFF'}</strong>
+                </span>
                 {sfxEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
               </button>
             </div>
           </aside>
 
           {tab === 'snap' ? (
-            <Home queued={queued} onClearQueued={() => setQueued(null)} />
+            <Home
+              key={queued?.key ?? 0}
+              initialPrompt={queued?.prompt}
+              initialSutra={queued?.sutraName}
+              autoSolveOnMount={queued?.autoSolve}
+            />
           ) : tab === 'sutras' ? (
             <SutrasLab onSendToAI={sendToAI} />
           ) : tab === 'scriptures' ? (

@@ -26,10 +26,16 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
     const rings: SonarRing[] = [];
     let crosshairs: CrosshairTarget[] = [];
     let frame = 0;
+    let scrollMeasureFrame = 0;
     let width = 0;
     let height = 0;
     let dpr = 1;
     let previousTime = 0;
+    let isDark = document.documentElement.dataset.theme === 'dark';
+
+    const requestDraw = () => {
+      if (!frame) frame = requestAnimationFrame(draw);
+    };
 
     const measureCrosshairs = () => {
       crosshairs = Array.from(document.querySelectorAll<SVGElement>('[data-crosshair]')).map(element => {
@@ -37,6 +43,14 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
         return { element, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
       });
       requestDraw();
+    };
+
+    const scheduleCrosshairMeasure = () => {
+      if (scrollMeasureFrame) return;
+      scrollMeasureFrame = requestAnimationFrame(() => {
+        scrollMeasureFrame = 0;
+        measureCrosshairs();
+      });
     };
 
     const resize = () => {
@@ -50,10 +64,6 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
       canvas.style.height = '100%';
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       requestDraw();
-    };
-
-    const requestDraw = () => {
-      if (!frame) frame = requestAnimationFrame(draw);
     };
 
     const updatePointer = (event: PointerEvent) => {
@@ -88,7 +98,7 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
       reticle.style.opacity = '0';
       crosshairs.forEach(({ element }) => {
         element.style.transform = 'rotate(0deg) scale(1)';
-        element.style.color = '#d4d4d8';
+        element.style.color = isDark ? '#52525b' : '#d4d4d8';
       });
       if (coordRef.current) coordRef.current.textContent = 'X:0000 Y:0000';
       requestDraw();
@@ -112,6 +122,8 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
       pointer.y += (pointer.targetY - pointer.y) * 0.18;
       context.clearRect(0, 0, width, height);
 
+      const idleColor = isDark ? '#52525b' : '#d4d4d8';
+      const nearColor = isDark ? '#fafafa' : '#09090b';
       const activeCrosshairs = crosshairs.map(target => {
         const distance = Math.hypot(pointer.x - target.x, pointer.y - target.y);
         const proximity = pointer.active ? Math.max(0, 1 - distance / 160) : 0;
@@ -121,7 +133,7 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
           proximity,
           rotation: proximity * 90,
           scale: 1 + proximity * 0.3,
-          color: distance < 55 && pointer.active ? '#ea580c' : proximity ? '#09090b' : '#d4d4d8',
+          color: distance < 55 && pointer.active ? (isDark ? '#fb923c' : '#ea580c') : proximity ? nearColor : idleColor,
         };
       });
 
@@ -143,9 +155,10 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
             const drawY = y + (distance ? (dy / distance) * displacement : 0);
             context.beginPath();
             context.arc(drawX, drawY, 1, 0, Math.PI * 2);
-            context.fillStyle = distance < 65
-              ? `rgba(234, 88, 12, ${0.42 * proximity})`
-              : `rgba(9, 9, 11, ${0.22 * proximity})`;
+            context.fillStyle =
+              distance < 65
+                ? `rgba(${isDark ? '249, 115, 22' : '234, 88, 12'}, ${0.44 * proximity})`
+                : `rgba(${isDark ? '255, 255, 255' : '9, 9, 11'}, ${(isDark ? 0.18 : 0.22) * proximity})`;
             context.fill();
           }
         }
@@ -157,7 +170,7 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
         ring.alpha *= 0.965;
         context.beginPath();
         context.arc(ring.x, ring.y, ring.radius, 0, Math.PI * 2);
-        context.strokeStyle = `rgba(9, 9, 11, ${ring.alpha})`;
+        context.strokeStyle = `rgba(${isDark ? '255, 255, 255' : '9, 9, 11'}, ${ring.alpha})`;
         context.lineWidth = 1;
         context.stroke();
         if (ring.alpha < 0.012 || ring.radius > 110) rings.splice(index, 1);
@@ -167,7 +180,13 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
         reticle.style.opacity = pointer.active ? '1' : '0';
         reticle.style.width = pointer.interactive ? '36px' : '24px';
         reticle.style.height = pointer.interactive ? '36px' : '24px';
-        reticle.style.borderColor = pointer.interactive ? '#ea580c' : 'rgba(9,9,11,0.65)';
+        reticle.style.borderColor = pointer.interactive
+          ? isDark
+            ? '#f97316'
+            : '#ea580c'
+          : isDark
+            ? 'rgba(250,250,250,0.45)'
+            : 'rgba(9,9,11,0.55)';
         reticle.style.transform = `translate3d(${pointer.x}px, ${pointer.y}px, 0) translate(-50%, -50%) scale(${pointer.down ? 0.75 : 1})`;
       }
 
@@ -176,24 +195,45 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
         element.style.color = color;
       });
 
-      const pointerStillMoving = pointer.active &&
+      const pointerStillMoving =
+        pointer.active &&
         (Math.abs(pointer.targetX - pointer.x) > 0.3 || Math.abs(pointer.targetY - pointer.y) > 0.3);
       if (rings.length || pointerStillMoving) requestDraw();
     };
 
     const observer = new ResizeObserver(resize);
     observer.observe(document.documentElement);
+
+    const isCrosshairNode = (node: Node) =>
+      node instanceof Element &&
+      !node.classList.contains('optical-ripple') &&
+      (node.matches('[data-crosshair]') || Boolean(node.querySelector('[data-crosshair]')));
+
     const mutationObserver = new MutationObserver(records => {
-      const hasCrosshairChange = records.some(record =>
-        [...record.addedNodes, ...record.removedNodes].some(
-          node => node instanceof Element && (node.matches('[data-crosshair]') || node.querySelector('[data-crosshair]')),
-        ),
-      );
+      let themeChanged = false;
+      let hasCrosshairChange = false;
+      for (const record of records) {
+        if (record.type === 'attributes' && record.attributeName === 'data-theme') {
+          isDark = document.documentElement.dataset.theme === 'dark';
+          themeChanged = true;
+        }
+        if (record.type === 'childList') {
+          if ([...record.addedNodes, ...record.removedNodes].some(isCrosshairNode)) {
+            hasCrosshairChange = true;
+          }
+        }
+      }
       if (hasCrosshairChange) measureCrosshairs();
+      else if (themeChanged) requestDraw();
     });
-    mutationObserver.observe(document.documentElement, { childList: true, subtree: true });
+    mutationObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
     window.addEventListener('resize', resize);
-    window.addEventListener('scroll', measureCrosshairs, true);
+    window.addEventListener('scroll', scheduleCrosshairMeasure, { capture: true, passive: true });
     document.addEventListener('pointermove', updatePointer, { passive: true });
     document.documentElement.addEventListener('mouseleave', onPointerLeave);
     window.addEventListener('blur', onPointerLeave);
@@ -205,13 +245,14 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
       observer.disconnect();
       mutationObserver.disconnect();
       window.removeEventListener('resize', resize);
-      window.removeEventListener('scroll', measureCrosshairs, true);
+      window.removeEventListener('scroll', scheduleCrosshairMeasure, true);
       document.removeEventListener('pointermove', updatePointer);
       document.documentElement.removeEventListener('mouseleave', onPointerLeave);
       window.removeEventListener('blur', onPointerLeave);
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('pointerup', onPointerUp);
       cancelAnimationFrame(frame);
+      if (scrollMeasureFrame) cancelAnimationFrame(scrollMeasureFrame);
     };
   }, [coordRef]);
 
@@ -231,7 +272,7 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
           top: 0,
           width: 24,
           height: 24,
-          border: '1px solid rgba(9,9,11,0.65)',
+          border: '1px solid rgba(9,9,11,0.55)',
           borderRadius: '50%',
           pointerEvents: 'none',
           zIndex: 9999,
