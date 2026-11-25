@@ -10,6 +10,7 @@ import {
   CircleHelp,
   Clock3,
   Copy,
+  Crosshair,
   FileImage,
   FlaskConical,
   ImagePlus,
@@ -21,10 +22,15 @@ import {
   Sparkles,
   Trophy,
   Upload,
+  Volume2,
+  VolumeX,
   X,
   Zap,
 } from 'lucide-react';
 import './App.css';
+import OpticalStage from './components/OpticalStage';
+import { isSfxEnabled, playClick, playError, playHoverTick, playSolveChime, playSuccess, playToggle, setSfxEnabled } from './utils/sfx';
+import { spawnRipple, useMagnetic, useScrambleValue, useSpotlightSurface } from './utils/physics';
 import {
   cubeRoot,
   ekadhikenaSquare,
@@ -747,18 +753,39 @@ function StandardSteps({ a, b }: { a: number; b: number }) {
 }
 
 function HelpModal({ onClose }: { onClose: () => void }) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  function close() {
+    playClick();
+    onClose();
+  }
+
   useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        playClick();
+        onClose();
+      }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      previousFocus?.focus();
+    };
   }, [onClose]);
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={onClose}>
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={close}>
       <div className="help-modal" onClick={e => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close modal">
+        <button
+          ref={closeButtonRef}
+          className="modal-close"
+          onPointerDown={e => spawnRipple(e)}
+          onClick={close}
+          aria-label="Close modal"
+        >
           <X size={18} />
         </button>
         <p className="eyebrow">Architecture</p>
@@ -816,6 +843,12 @@ function Home({
   const [helpOpen, setHelpOpen] = useState(false);
   const [image, setImage] = useState<UploadedImage | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [hoveredStepIdx, setHoveredStepIdx] = useState<number | null>(null);
+  const inputSurface = useSpotlightSurface({ tilt: false });
+  const resultSurface = useSpotlightSurface({ tilt: true });
+  const spotlightSurface = useSpotlightSurface({ tilt: true });
+  const solveMagnetic = useMagnetic(5);
+  const uploadMagnetic = useMagnetic(5);
 
   useEffect(() => {
     if (queued) {
@@ -842,11 +875,14 @@ function Home({
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         setError(payload?.error || `The AI service returned HTTP ${response.status}.`);
+        playError();
         return;
       }
       setResult(payload);
+      playSolveChime();
     } catch {
       setError('Could not reach /api/solve. Run via Vercel deployment or `npx vercel dev`.');
+      playError();
     } finally {
       setLoading(false);
     }
@@ -932,10 +968,16 @@ function Home({
       : (result?.sanskrit_verse || spotlight.sanskrit || '');
   const showStandardComparison =
     ['nikhilam', 'ekanyunena', 'urdhva'].includes(activeSutra) && activeNumbers.length >= 2;
+  const standardOperationCount =
+    activeNumbers.length >= 2
+      ? String(Math.abs(activeNumbers[0])).length * String(Math.abs(activeNumbers[1])).length + 1
+      : 0;
+  const scrambledAnswer = useScrambleValue(local?.answer ?? null);
 
   function copyAnswer(val: number | string) {
     navigator.clipboard?.writeText(String(val));
     setCopied(true);
+    playSuccess();
     window.setTimeout(() => setCopied(false), 1600);
   }
 
@@ -946,6 +988,7 @@ function Home({
         <div className="title-row">
           <div>
             <p className="eyebrow">
+              <span className="section-index">01 //</span>
               <Zap size={12} /> AI Snap & Solve
             </p>
             <h1>Vedic Math Workspace</h1>
@@ -971,7 +1014,8 @@ function Home({
         ) : null}
 
         <section
-          className={`input-card ${dragging ? 'dragging' : ''}`}
+          className={`input-card optical-surface ${dragging ? 'dragging' : ''}`}
+          {...inputSurface}
           onDragOver={e => {
             e.preventDefault();
             setDragging(true);
@@ -1024,6 +1068,12 @@ function Home({
               >
                 <X size={16} />
               </button>
+              {loading ? (
+                <div className="ocr-scan" aria-live="polite">
+                  <span>SCANNING GLYPHS // ROUTING SUTRA...</span>
+                  <i />
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -1050,6 +1100,11 @@ function Home({
               <button
                 key={sample.label}
                 type="button"
+                className={prompt === sample.prompt ? 'selected' : ''}
+                onPointerDown={e => {
+                  playClick();
+                  spawnRipple(e);
+                }}
                 onClick={() => {
                   setPrompt(sample.prompt);
                   setPinnedSutra('');
@@ -1063,19 +1118,37 @@ function Home({
           </div>
 
           <div className="input-actions">
-            <button type="button" className="camera-button" onClick={() => inputRef.current?.click()}>
-              <Upload size={15} /> Upload or drop photo
+            <button
+              type="button"
+              className="camera-button"
+              {...uploadMagnetic}
+              onPointerDown={e => {
+                playClick();
+                spawnRipple(e);
+              }}
+              onClick={() => inputRef.current?.click()}
+            >
+              <span className="btn-inner" data-magnetic-inner>
+                <Upload size={15} /> Upload or drop photo
+              </span>
             </button>
             <div className="action-right">
               <span className="shortcut-hint">Ctrl + Enter</span>
               <button
                 type="button"
                 className="solve-button"
+                {...solveMagnetic}
+                onPointerDown={e => {
+                  playClick();
+                  spawnRipple(e, true);
+                }}
                 onClick={solve}
                 disabled={loading || (!prompt.trim() && !image)}
               >
-                {loading ? <RefreshCw className="spin" size={16} /> : <Sparkles size={16} />}
-                {loading ? 'Analyzing...' : 'Solve with AI'}
+                <span className="btn-inner" data-magnetic-inner>
+                  {loading ? <RefreshCw className="spin" size={16} /> : <Sparkles size={16} />}
+                  {loading ? 'Analyzing...' : 'Solve with AI'}
+                </span>
               </button>
             </div>
           </div>
@@ -1092,8 +1165,8 @@ function Home({
             <div className="skeleton-line w-75" />
           </section>
         ) : local?.answer !== null && local?.answer !== undefined ? (
-          <section className="result-card">
-            <div className="result-head">
+          <section className="result-card optical-surface" {...resultSurface}>
+            <div className="result-head bg-optical-dots">
               <div>
                 <div className="result-badges">
                   <span className="tag">
@@ -1107,9 +1180,14 @@ function Home({
                 </div>
                 <div className="result-title-line">
                   <h2>
-                    {result?.extracted_problem || prompt} = <em>{local.answer}</em>
+                    {result?.extracted_problem || prompt} = <em>{scrambledAnswer}</em>
                   </h2>
-                  <button type="button" className="copy-btn" onClick={() => copyAnswer(local.answer!)}>
+                  <button
+                    type="button"
+                    className="copy-btn"
+                    onPointerDown={e => spawnRipple(e)}
+                    onClick={() => copyAnswer(local.answer!)}
+                  >
                     {copied ? <Check size={13} /> : <Copy size={13} />}
                     {copied ? 'Copied' : 'Copy'}
                   </button>
@@ -1131,8 +1209,17 @@ function Home({
               <div className="steps-panel">
                 <h3 className="panel-heading">Step-by-step Vedic Execution</h3>
                 {local.steps.map((step, i) => (
-                  <div className="step" style={{ animationDelay: `${i * 55}ms` }} key={`${step.title}-${i}`}>
-                    <span>{i + 1}</span>
+                  <div
+                    className={`step ${hoveredStepIdx === i ? 'step-linked' : ''}`}
+                    style={{ animationDelay: `${i * 55}ms` }}
+                    key={`${step.title}-${i}`}
+                    onPointerEnter={() => setHoveredStepIdx(i)}
+                    onPointerLeave={() => setHoveredStepIdx(null)}
+                    onFocus={() => setHoveredStepIdx(i)}
+                    onBlur={() => setHoveredStepIdx(null)}
+                    tabIndex={0}
+                  >
+                    <span>{String(i + 1).padStart(2, '0')}</span>
                     <div>
                       <strong>{step.title}</strong>
                       <p>{step.detail}</p>
@@ -1154,8 +1241,31 @@ function Home({
                       <div className="metric-tile">
                         <span>Standard ops</span>
                         <strong>
-                          {String(Math.abs(activeNumbers[0])).length * String(Math.abs(activeNumbers[1])).length + 1}
+                          {standardOperationCount}
                         </strong>
+                      </div>
+                    </div>
+                    <div
+                      className="efficiency-bars"
+                      aria-label="Vedic step count compared with standard operations"
+                    >
+                      <div className="efficiency-bar-row">
+                        <span>Vedic steps</span>
+                        <div className="efficiency-track">
+                          <i
+                            style={{
+                              width: `${Math.min(100, (local.steps.length / standardOperationCount) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                        <strong>{local.steps.length}</strong>
+                      </div>
+                      <div className="efficiency-bar-row standard">
+                        <span>Standard ops</span>
+                        <div className="efficiency-track">
+                          <i style={{ width: '100%' }} />
+                        </div>
+                        <strong>{standardOperationCount}</strong>
                       </div>
                     </div>
                     <StandardSteps a={activeNumbers[0]} b={activeNumbers[1]} />
@@ -1186,8 +1296,8 @@ function Home({
             </div>
           </section>
         ) : result ? (
-          <section className="result-card">
-            <div className="result-head">
+          <section className="result-card optical-surface" {...resultSurface}>
+            <div className="result-head bg-optical-dots">
               <div>
                 <span className="tag ai-tag">
                   <Sparkles size={11} /> AI TUTOR SOLUTION
@@ -1213,8 +1323,17 @@ function Home({
                 <h3 className="panel-heading">Guided Walkthrough</h3>
                 {result.ai_steps?.length ? (
                   result.ai_steps.map((step, i) => (
-                    <div className="step" style={{ animationDelay: `${i * 55}ms` }} key={`${step.title}-${i}`}>
-                      <span>{i + 1}</span>
+                    <div
+                      className={`step ${hoveredStepIdx === i ? 'step-linked' : ''}`}
+                      style={{ animationDelay: `${i * 55}ms` }}
+                      key={`${step.title}-${i}`}
+                      onPointerEnter={() => setHoveredStepIdx(i)}
+                      onPointerLeave={() => setHoveredStepIdx(null)}
+                      onFocus={() => setHoveredStepIdx(i)}
+                      onBlur={() => setHoveredStepIdx(null)}
+                      tabIndex={0}
+                    >
+                      <span>{String(i + 1).padStart(2, '0')}</span>
                       <div>
                         <strong>{step.title}</strong>
                         <p>{step.detail}</p>
@@ -1251,19 +1370,24 @@ function Home({
       </main>
 
       <aside className="insights">
+        <Crosshair className="workspace-crosshair" size={9} data-crosshair aria-hidden="true" />
         <div className="aside-head">
           <h3>Sutra Spotlight</h3>
           <span>{spotlight.badge}</span>
         </div>
 
-        <div className="sutra-quote-card" key={`${spotlight.id}-${spotlight.exampleProblem}`}>
+        <div
+          className="sutra-quote-card optical-surface"
+          key={`${spotlight.id}-${spotlight.exampleProblem}`}
+          {...spotlightSurface}
+        >
           <div className="sutra-quote">
             <b>{spotlight.sanskrit}</b>
             <p>{spotlight.name}</p>
           </div>
           <p className="translation">{spotlight.meaning}</p>
 
-          <div className="spotlight-formula">
+          <div className={`spotlight-formula bg-optical-dots ${hoveredStepIdx !== null ? 'formula-linked' : ''}`}>
             <span>Formula / Rule</span>
             <code>{spotlight.formula}</code>
           </div>
@@ -1276,7 +1400,7 @@ function Home({
             <ul className="spotlight-steps">
               {spotlight.exampleSteps.map((stepText, idx) => (
                 <li key={idx}>
-                  <b>{idx + 1}</b>
+                  <b>{String(idx + 1).padStart(2, '0')}</b>
                   <span>{stepText}</span>
                 </li>
               ))}
@@ -1290,6 +1414,11 @@ function Home({
           {spotlight.quickExamples.map(item => (
             <button
               key={item}
+              onPointerEnter={playHoverTick}
+              onPointerDown={e => {
+                playClick();
+                spawnRipple(e);
+              }}
               onClick={() => {
                 setPrompt(item);
                 setPinnedSutra('');
@@ -1315,6 +1444,8 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
   const [nineDigits, setNineDigits] = useState(2);
   const [query, setQuery] = useState('');
   const [selectedSutra, setSelectedSutra] = useState<(typeof SUTRAS)[number] | null>(null);
+  const calculatorSurface = useSpotlightSurface({ tilt: false });
+  const tabMagnetic = useMagnetic(3);
 
   const local = useMemo(() => {
     if (active === 'Nikhilam') return nikhilam(a, b);
@@ -1327,23 +1458,51 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
     () => SUTRAS.filter(s => `${s[0]} ${s[1]}`.toLowerCase().includes(query.toLowerCase())),
     [query],
   );
+  const answerDisplay = useScrambleValue(local.answer ?? null);
 
   return (
     <div className="lab-layout view-enter">
       <main>
-        <p className="eyebrow">Vedic Sutras Lab</p>
-        <h1>Interactive Sutra Workbench</h1>
-        <p className="subtitle">Experiment with deterministic Vedic algorithms and explore all 16 Sutras & 13 Sub-Sutras.</p>
+        <div className="lab-title-row">
+          <div>
+            <p className="eyebrow">
+              <span className="section-index">02 //</span>Vedic Sutras Lab
+            </p>
+            <h1>Interactive Sutra Workbench</h1>
+            <p className="subtitle">
+              Experiment with deterministic Vedic algorithms and explore all 16 Sutras & 13 Sub-Sutras.
+            </p>
+          </div>
+          <div className="lab-engine-status">
+            <Crosshair size={14} data-crosshair />
+            <span>ENGINE / 01</span>
+            <b>LOCAL DETERMINISTIC</b>
+          </div>
+        </div>
 
         <div className="sutra-tabs">
           {(['Nikhilam', 'Ekadhikena', 'Ekanyunena', 'Urdhva'] as const).map(name => (
-            <button key={name} className={active === name ? 'active' : ''} onClick={() => setActive(name)}>
-              {name}
+            <button
+              key={name}
+              className={active === name ? 'active' : ''}
+              {...tabMagnetic}
+              onPointerEnter={playHoverTick}
+              onPointerDown={e => {
+                playClick();
+                spawnRipple(e, active !== name);
+              }}
+              onClick={() => setActive(name)}
+            >
+              <span className="btn-inner" data-magnetic-inner>{name}</span>
             </button>
           ))}
         </div>
 
-        <section className="calculator-card" key={active}>
+        <section
+          className="calculator-card sutra-workbench optical-surface"
+          key={active}
+          {...calculatorSurface}
+        >
           {active === 'Ekadhikena' ? (
             <>
               <h2>Ekadhikena Purvena</h2>
@@ -1384,11 +1543,18 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
 
           {local.answer !== null ? (
             <>
-              <div className="answer-box">{local.answer}</div>
+              <div className="answer-box" aria-live="polite">
+                <span className="answer-prefix">=</span>
+                {answerDisplay}
+              </div>
               <div className="lab-steps">
                 {local.steps.map((step, i) => (
-                  <div key={`${step.title}-${i}`} style={{ animationDelay: `${i * 45}ms` }}>
-                    <span>{i + 1}</span>
+                  <div
+                    key={`${step.title}-${i}`}
+                    style={{ animationDelay: `${i * 45}ms` }}
+                    onPointerEnter={playHoverTick}
+                  >
+                    <span>{String(i + 1).padStart(2, '0')}</span>
                     <div>
                       <strong>{step.title}</strong>
                       <p>{step.detail}</p>
@@ -1402,6 +1568,10 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
           )}
         </section>
 
+        <div className="sutra-search-label">
+          <span>SEARCH THE CANON</span>
+          <span>{filtered.length.toString().padStart(2, '0')} / 16 MATCHES</span>
+        </div>
         <div className="search-row">
           <Search size={18} />
           <input
@@ -1413,14 +1583,20 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
       </main>
 
       <aside className="sutra-list">
+        <Crosshair className="workspace-crosshair" size={9} data-crosshair aria-hidden="true" />
         <div className="sutra-list-header">
-          <h3>16 Core Sutras</h3>
+          <h3>Core Sutras</h3>
           <span>{filtered.length} shown</span>
         </div>
 
         {selectedSutra ? (
           <div className="sutra-detail">
-            <button className="detail-close" onClick={() => setSelectedSutra(null)} aria-label="Close details">
+            <button
+              className="detail-close"
+              onPointerDown={e => spawnRipple(e)}
+              onClick={() => setSelectedSutra(null)}
+              aria-label="Close details"
+            >
               <X size={15} />
             </button>
             <strong>{selectedSutra[0]}</strong>
@@ -1428,6 +1604,10 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
             <button
               type="button"
               className="try-sutra-btn"
+              onPointerDown={e => {
+                playClick();
+                spawnRipple(e, true);
+              }}
               onClick={() => onSendToAI(selectedSutra[2], selectedSutra[0])}
             >
               Try in AI Solver <ArrowRight size={13} />
@@ -1439,6 +1619,11 @@ function SutrasLab({ onSendToAI }: { onSendToAI: (example: string, sutraName: st
           <button
             key={name}
             className={`sutra-item ${selectedSutra?.[0] === name ? 'selected' : ''}`}
+            onPointerEnter={playHoverTick}
+            onPointerDown={e => {
+              playClick();
+              spawnRipple(e);
+            }}
             onClick={() => setSelectedSutra([name, meaning, example])}
           >
             <span>{String(i + 1).padStart(2, '0')}</span>
@@ -1482,6 +1667,7 @@ function ScripturesLab() {
   const [sideA, setSideA] = useState(3);
   const [sideB, setSideB] = useState(4);
   const [piTerms, setPiTerms] = useState(120);
+  const toolSurface = useSpotlightSurface({ tilt: true });
 
   const cubeResult = useMemo(() => cubeRoot(cube), [cube]);
   const kapResult = useMemo(() => kaprekar(kap), [kap]);
@@ -1497,15 +1683,26 @@ function ScripturesLab() {
 
   return (
     <div className="scripture-page view-enter">
-      <p className="eyebrow">Ancient Scriptures Lab</p>
-      <h1>Mathematics Across Indian Tradition</h1>
-      <p className="subtitle">
-        Explore geometry from the <em>Sulba Sutras</em>, infinite series from the Kerala School, Pingala’s
-        combinatorics, and classical number ciphers.
-      </p>
+      <div className="scripture-title-row">
+        <div>
+          <p className="eyebrow">
+            <span className="section-index">03 //</span>Ancient Scriptures Lab
+          </p>
+          <h1>Mathematics Across Indian Tradition</h1>
+          <p className="subtitle">
+            Explore geometry from the <em>Sulba Sutras</em>, infinite series from the Kerala School, Pingala’s
+            combinatorics, and classical number ciphers.
+          </p>
+        </div>
+        <div className="scripture-engine-status">
+          <Crosshair size={14} data-crosshair />
+          <span>ARCHIVE / 06 TOOLS</span>
+          <b>LIVE EXPLORATION</b>
+        </div>
+      </div>
 
       <div className="tool-grid">
-        <section className="tool-card">
+        <section className="tool-card scripture-tool optical-surface" {...toolSurface}>
           <div className="tool-head">
             <div className="tool-icon">
               <Landmark size={20} />
@@ -1526,10 +1723,15 @@ function ScripturesLab() {
             </label>
           </div>
           <svg className="triangle-svg" viewBox="0 0 280 155" role="img" aria-label="Right triangle visualization">
+            <defs>
+              <pattern id="geometry-grid" width="12" height="12" patternUnits="userSpaceOnUse">
+                <path d="M 12 0 L 0 0 0 12" fill="none" stroke="#ea580c" strokeOpacity="0.1" strokeWidth="0.6" />
+              </pattern>
+            </defs>
             <polygon
               points={`28,128 ${triangleX},128 ${triangleX},${triangleTop}`}
-              fill="#eef2ff"
-              stroke="#4361ee"
+              fill="url(#geometry-grid)"
+              stroke="#ea580c"
               strokeWidth="3"
               strokeLinejoin="round"
             />
@@ -1543,7 +1745,7 @@ function ScripturesLab() {
               c = {hypotenuse.toFixed(3)}
             </text>
           </svg>
-          <div className="formula-box">
+          <div className="formula-box bg-optical-dots">
             <strong>Baudhayana √2 Formula: 1 + 1/3 + 1/(3·4) − 1/(3·4·34)</strong>
             <span>{baudhayana.toFixed(10)}</span>
             <small>
@@ -1552,7 +1754,7 @@ function ScripturesLab() {
           </div>
         </section>
 
-        <section className="tool-card">
+        <section className="tool-card scripture-tool optical-surface" {...toolSurface}>
           <div className="tool-head">
             <div className="tool-icon">
               <FlaskConical size={20} />
@@ -1573,7 +1775,7 @@ function ScripturesLab() {
             />
           </label>
           <div className="answer-box">{piValue.toFixed(8)}</div>
-          <div className="formula-box">
+          <div className="formula-box bg-optical-dots">
             <strong>Convergence Check</strong>
             <small>
               Modern π: {Math.PI.toFixed(8)} · Absolute diff: {piError.toFixed(6)}
@@ -1581,7 +1783,7 @@ function ScripturesLab() {
           </div>
         </section>
 
-        <section className="tool-card">
+        <section className="tool-card scripture-tool optical-surface" {...toolSurface}>
           <div className="tool-head">
             <div className="tool-icon">
               <Calculator size={20} />
@@ -1602,7 +1804,7 @@ function ScripturesLab() {
           ))}
         </section>
 
-        <section className="tool-card">
+        <section className="tool-card scripture-tool optical-surface" {...toolSurface}>
           <div className="tool-head">
             <div className="tool-icon">
               <RefreshCw size={20} />
@@ -1626,14 +1828,14 @@ function ScripturesLab() {
               {kapResult.steps.map((n, i) => (
                 <span className="convergence-step" key={`${n}-${i}`}>
                   <span className={`convergence-pill ${n === 6174 ? 'final' : ''}`}>{n}</span>
-                  {i < kapResult.steps.length - 1 ? <ArrowRight size={13} color="#94a3b8" /> : null}
+                  {i < kapResult.steps.length - 1 ? <ArrowRight size={13} className="convergence-arrow" /> : null}
                 </span>
               ))}
             </div>
           )}
         </section>
 
-        <section className="tool-card">
+        <section className="tool-card scripture-tool optical-surface" {...toolSurface}>
           <div className="tool-head">
             <div className="tool-icon">
               <BookOpen size={20} />
@@ -1644,13 +1846,34 @@ function ScripturesLab() {
             </div>
           </div>
           <div className="preset-row">
-            <button type="button" onClick={() => setWord('Mayamalavagowla')}>
+            <button
+              type="button"
+              onPointerDown={e => {
+                playClick();
+                spawnRipple(e);
+              }}
+              onClick={() => setWord('Mayamalavagowla')}
+            >
               Mayamalavagowla → 15
             </button>
-            <button type="button" onClick={() => setWord('Rama')}>
+            <button
+              type="button"
+              onPointerDown={e => {
+                playClick();
+                spawnRipple(e);
+              }}
+              onClick={() => setWord('Rama')}
+            >
               Rama → 52
             </button>
-            <button type="button" onClick={() => setWord('Ganita')}>
+            <button
+              type="button"
+              onPointerDown={e => {
+                playClick();
+                spawnRipple(e);
+              }}
+              onClick={() => setWord('Ganita')}
+            >
               Ganita → 153
             </button>
           </div>
@@ -1672,7 +1895,7 @@ function ScripturesLab() {
           </div>
         </section>
 
-        <section className="tool-card">
+        <section className="tool-card scripture-tool optical-surface" {...toolSurface}>
           <div className="tool-head">
             <div className="tool-icon">
               <FileImage size={20} />
@@ -1696,7 +1919,13 @@ function ScripturesLab() {
             {Array.from({ length: meruRows }).map((_, r) => (
               <div key={r}>
                 {Array.from({ length: r + 1 }).map((__, c) => (
-                  <span key={c}>{binomial(r, c)}</span>
+                  <span
+                    key={c}
+                    style={{ animationDelay: `${(r + c) * 35}ms` }}
+                    onPointerEnter={playHoverTick}
+                  >
+                    {binomial(r, c)}
+                  </span>
                 ))}
               </div>
             ))}
@@ -1915,6 +2144,10 @@ function Quiz() {
   const [finished, setFinished] = useState(false);
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
   const [aiExplain, setAiExplain] = useState<Record<string, QuizAIState>>({});
+  const quizSurface = useSpotlightSurface({ tilt: false });
+  const reviewSurface = useSpotlightSurface({ tilt: true });
+  const quizSummarySurface = useSpotlightSurface({ tilt: true });
+  const nextMagnetic = useMagnetic(4);
 
   useEffect(() => {
     if (finished || selected !== null || time <= 0) return;
@@ -1927,10 +2160,17 @@ function Quiz() {
   function pick(choice: number) {
     if (selected !== null || time === 0 || finished) return;
     setSelected(choice);
-    if (choice === current.answer) setSessionScore(value => value + 1);
+    playClick();
+    if (choice === current.answer) {
+      setSessionScore(value => value + 1);
+      playSuccess();
+    } else {
+      playError();
+    }
   }
 
   function nextQuestion() {
+    playClick();
     const attempt: QuizAttempt = {
       question: current,
       selected,
@@ -1947,6 +2187,7 @@ function Quiz() {
         localStorage.setItem('iks-best-score', String(sessionScore));
       }
       setFinished(true);
+      playSuccess();
       return;
     }
 
@@ -1956,6 +2197,7 @@ function Quiz() {
   }
 
   function startNewRound() {
+    playClick();
     setQuestions(generateFreshQuizRound(5));
     setSessionScore(0);
     setQuestionIdx(0);
@@ -1978,6 +2220,7 @@ function Quiz() {
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload) {
+        playError();
         setAiExplain(prev => ({
           ...prev,
           [q.id]: { loading: false, error: payload?.error || `AI service returned HTTP ${response.status}.` },
@@ -1985,7 +2228,9 @@ function Quiz() {
         return;
       }
       setAiExplain(prev => ({ ...prev, [q.id]: { loading: false, data: payload } }));
+      playSuccess();
     } catch {
+      playError();
       setAiExplain(prev => ({
         ...prev,
         [q.id]: { loading: false, error: 'Could not reach /api/solve. Check your dev server or Vercel deployment.' },
@@ -2003,18 +2248,27 @@ function Quiz() {
       <div className="quiz-page view-enter">
         <div className="quiz-head">
           <div>
-            <p className="eyebrow">Speed Quiz · Complete Review</p>
+            <p className="eyebrow">
+              <span className="section-index">04 //</span>Speed Quiz · Complete Review
+            </p>
             <h1>Challenge Results &amp; Vedic Solutions</h1>
             <p className="subtitle">
               Inspect the deterministic Vedic method for every question, or ask Groq AI for deeper intuition.
             </p>
           </div>
-          <button className="next-button" onClick={startNewRound}>
-            <RefreshCw size={15} /> New Fresh Quiz
+          <button
+            className="next-button"
+            {...nextMagnetic}
+            onPointerDown={e => spawnRipple(e, true)}
+            onClick={startNewRound}
+          >
+            <span className="btn-inner" data-magnetic-inner>
+              <RefreshCw size={15} /> New Fresh Quiz
+            </span>
           </button>
         </div>
 
-        <section className="quiz-summary-card">
+        <section className="quiz-summary-card optical-surface" {...quizSummarySurface}>
           <div className="summary-main">
             <div className="completion-trophy"><Trophy size={34} /></div>
             <div>
@@ -2043,8 +2297,9 @@ function Quiz() {
             const aiState = aiExplain[item.question.id];
             return (
               <article
-                className={`review-card ${item.isCorrect ? 'is-correct' : 'is-wrong'}`}
+                className={`review-card optical-surface ${item.isCorrect ? 'is-correct' : 'is-wrong'}`}
                 style={{ animationDelay: `${idx * 55}ms` }}
+                {...reviewSurface}
                 key={item.question.id}
               >
                 <div className="review-top">
@@ -2078,7 +2333,11 @@ function Quiz() {
                       type="button"
                       className="ai-explain-btn"
                       disabled={aiState?.loading || Boolean(aiState?.data)}
-                      onClick={() => explainWithAI(item.question)}
+                      onPointerDown={e => spawnRipple(e)}
+                      onClick={() => {
+                        playClick();
+                        explainWithAI(item.question);
+                      }}
                     >
                       {aiState?.loading ? (
                         <><RefreshCw className="spin" size={13} /> Asking AI...</>
@@ -2093,7 +2352,7 @@ function Quiz() {
                   <div className="review-steps">
                     {item.question.steps.map((step, sIdx) => (
                       <div className="review-step" key={`${step.title}-${sIdx}`}>
-                        <span>{sIdx + 1}</span>
+                        <span>{String(sIdx + 1).padStart(2, '0')}</span>
                         <div><strong>{step.title}:</strong> {step.detail}</div>
                       </div>
                     ))}
@@ -2125,8 +2384,15 @@ function Quiz() {
         </div>
 
         <div className="review-bottom-actions">
-          <button className="next-button" onClick={startNewRound}>
-            <RefreshCw size={15} /> Play Another Fresh Round
+          <button
+            className="next-button"
+            {...nextMagnetic}
+            onPointerDown={e => spawnRipple(e, true)}
+            onClick={startNewRound}
+          >
+            <span className="btn-inner" data-magnetic-inner>
+              <RefreshCw size={15} /> Play Another Fresh Round
+            </span>
           </button>
         </div>
       </div>
@@ -2137,7 +2403,9 @@ function Quiz() {
     <div className="quiz-page view-enter">
       <div className="quiz-head">
         <div>
-          <p className="eyebrow">Speed Quiz · Dynamic Generator</p>
+          <p className="eyebrow">
+            <span className="section-index">04 //</span>Speed Quiz · Dynamic Generator
+          </p>
           <h1>Vedic Math Sprint</h1>
           <p className="subtitle">5 brand-new non-repeating problems across 5 Sutras under a 20-second clock.</p>
         </div>
@@ -2148,7 +2416,7 @@ function Quiz() {
         </div>
       </div>
 
-      <section className="quiz-card" key={current.id}>
+      <section className="quiz-card optical-surface" key={current.id} {...quizSurface}>
         <div className="quiz-meta">
           <span>Question {questionIdx + 1} of {questions.length}</span>
           <span className={`timer ${time <= 5 ? 'urgent' : ''}`}>
@@ -2162,7 +2430,7 @@ function Quiz() {
 
         <span className="quiz-hint-badge">{current.hint}</span>
         <h2>{current.q}</h2>
-        <p className="quiz-sub">
+        <p className="quiz-sub" aria-live="polite">
           {time === 0
             ? 'Time is up — correct answer highlighted.'
             : selected !== null
@@ -2180,7 +2448,10 @@ function Quiz() {
               <button
                 key={i}
                 disabled={selected !== null || time === 0}
+                aria-pressed={selected === choice}
                 className={revealCorrect ? 'correct' : selectedWrong ? 'wrong' : ''}
+                onPointerEnter={playHoverTick}
+                onPointerDown={e => spawnRipple(e)}
                 onClick={() => pick(choice)}
               >
                 {choice}
@@ -2190,9 +2461,17 @@ function Quiz() {
         </div>
 
         <div className="quiz-footer">
-          <button className="next-button" disabled={selected === null && time > 0} onClick={nextQuestion}>
-            {questionIdx === questions.length - 1 ? 'View Full Solutions' : 'Next Question'}{' '}
-            <ChevronRight size={16} />
+          <button
+            className="next-button"
+            {...nextMagnetic}
+            disabled={selected === null && time > 0}
+            onPointerDown={e => spawnRipple(e, true)}
+            onClick={nextQuestion}
+          >
+            <span className="btn-inner" data-magnetic-inner>
+              {questionIdx === questions.length - 1 ? 'View Full Solutions' : 'Next Question'}
+              <ChevronRight size={16} />
+            </span>
           </button>
         </div>
       </section>
@@ -2204,7 +2483,11 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('snap');
   const [menuOpen, setMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [sfxEnabled, setSfxEnabledState] = useState(isSfxEnabled);
   const [queued, setQueued] = useState<{ prompt: string; sutraName: string } | null>(null);
+  const coordRef = useRef<HTMLSpanElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const navUnderlineRef = useRef<HTMLSpanElement>(null);
 
   const nav = [
     { id: 'snap' as const, label: 'AI Snap & Solve', icon: Sparkles },
@@ -2213,6 +2496,33 @@ export default function App() {
     { id: 'quiz' as const, label: 'Speed Quiz', icon: Trophy },
   ];
 
+  useEffect(() => {
+    let disposed = false;
+    const updateUnderline = () => {
+      const active = navRef.current?.querySelector<HTMLButtonElement>('[data-active="true"]');
+      const underline = navUnderlineRef.current;
+      if (!active || !underline) return;
+      underline.style.width = `${active.offsetWidth}px`;
+      underline.style.transform = `translateX(${active.offsetLeft}px)`;
+    };
+    updateUnderline();
+    void document.fonts.ready.then(() => {
+      if (!disposed) window.requestAnimationFrame(updateUnderline);
+    });
+    window.addEventListener('resize', updateUnderline);
+    return () => {
+      disposed = true;
+      window.removeEventListener('resize', updateUnderline);
+    };
+  }, [tab]);
+
+  function toggleSfx() {
+    const next = !sfxEnabled;
+    setSfxEnabledState(next);
+    setSfxEnabled(next);
+    playToggle(next);
+  }
+
   function sendToAI(example: string, sutraName: string) {
     setQueued({ prompt: example, sutraName });
     setTab('snap');
@@ -2220,53 +2530,92 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
-      {helpOpen ? <HelpModal onClose={() => setHelpOpen(false)} /> : null}
-      <header className="topbar">
-        <button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label="Toggle navigation">
-          {menuOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-
-        <div className="brand">
-          <div className="brand-mark">ग</div>
-          <span className="brand-name">
-            Ganita<span>AI</span>
-          </span>
+    <>
+      <OpticalStage coordRef={coordRef} />
+      <div className="optical-frame">
+        <div className="registration-marks" aria-hidden="true">
+          <span className="registration-top-left"><Crosshair size={9} data-crosshair /></span>
+          <span className="registration-top-right"><Crosshair size={9} data-crosshair /></span>
+          <span className="registration-split"><Crosshair size={9} data-crosshair /></span>
+          <span className="registration-bottom-left"><Crosshair size={9} data-crosshair /></span>
+          <span className="registration-bottom-right"><Crosshair size={9} data-crosshair /></span>
         </div>
-
-        <nav className={menuOpen ? 'open' : ''}>
-          {nav.map(item => (
+        <div className="app-shell">
+          {helpOpen ? <HelpModal onClose={() => setHelpOpen(false)} /> : null}
+          <header className="topbar">
             <button
-              key={item.id}
-              className={tab === item.id ? 'active' : ''}
-              onClick={() => {
-                setTab(item.id);
-                setMenuOpen(false);
+              className="mobile-menu"
+              onPointerDown={e => {
+                playClick();
+                spawnRipple(e);
               }}
+              onClick={() => setMenuOpen(value => !value)}
+              aria-label="Toggle navigation"
             >
-              <item.icon size={16} />
-              {item.label}
+              {menuOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
-          ))}
-        </nav>
 
-        <div className="topbar-right">
-          <button className="info-pill" onClick={() => setHelpOpen(true)}>
-            <ShieldCheck size={15} />
-            <span>Neuro-Symbolic</span>
-          </button>
+            <div className="brand">
+              <div className="brand-mark">ग</div>
+              <span className="brand-name">
+                Ganita<span>AI</span>
+              </span>
+            </div>
+
+            <nav ref={navRef} className={menuOpen ? 'open' : ''}>
+              {nav.map(item => (
+                <button
+                  key={item.id}
+                  data-active={tab === item.id}
+                  className={tab === item.id ? 'active' : ''}
+                  onPointerDown={e => {
+                    playClick();
+                    spawnRipple(e);
+                  }}
+                  onClick={() => {
+                    setTab(item.id);
+                    setMenuOpen(false);
+                  }}
+                >
+                  <item.icon size={16} />
+                  {item.label}
+                </button>
+              ))}
+              <span ref={navUnderlineRef} className="nav-underline" aria-hidden="true" />
+            </nav>
+
+            <div className="topbar-right">
+              <span ref={coordRef} className="pointer-coordinates" aria-hidden="true">X:0000 Y:0000</span>
+              <button className="sfx-toggle" onClick={toggleSfx} aria-label={`${sfxEnabled ? 'Disable' : 'Enable'} sound effects`} title="Toggle sound effects">
+                {sfxEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                <span>SFX</span>
+              </button>
+              <button
+                className="info-pill"
+                aria-label="About GanitaAI's neuro-symbolic architecture"
+                onPointerDown={e => {
+                  playClick();
+                  spawnRipple(e);
+                }}
+                onClick={() => setHelpOpen(true)}
+              >
+                <span className="neuro-led" />
+                <span>NEURO-SYMBOLIC</span>
+              </button>
+            </div>
+          </header>
+
+          {tab === 'snap' ? (
+            <Home queued={queued} onClearQueued={() => setQueued(null)} />
+          ) : tab === 'sutras' ? (
+            <SutrasLab onSendToAI={sendToAI} />
+          ) : tab === 'scriptures' ? (
+            <ScripturesLab />
+          ) : (
+            <Quiz />
+          )}
         </div>
-      </header>
-
-      {tab === 'snap' ? (
-        <Home queued={queued} onClearQueued={() => setQueued(null)} />
-      ) : tab === 'sutras' ? (
-        <SutrasLab onSendToAI={sendToAI} />
-      ) : tab === 'scriptures' ? (
-        <ScripturesLab />
-      ) : (
-        <Quiz />
-      )}
-    </div>
+      </div>
+    </>
   );
 }
