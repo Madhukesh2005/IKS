@@ -779,16 +779,21 @@ function HelpModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={close}>
       <div className="help-modal" onClick={e => e.stopPropagation()}>
-        <button
-          ref={closeButtonRef}
-          className="modal-close"
-          onPointerDown={e => spawnRipple(e)}
-          onClick={close}
-          aria-label="Close modal"
-        >
-          <X size={18} />
-        </button>
-        <p className="eyebrow">Architecture</p>
+        <div className="modal-head-row">
+          <p className="eyebrow">
+            <span className="section-index">SYS //</span>Architecture
+          </p>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="modal-close"
+            onPointerDown={e => spawnRipple(e)}
+            onClick={close}
+            aria-label="Close modal"
+          >
+            <X size={16} />
+          </button>
+        </div>
         <h2 id="help-title">Neuro-Symbolic Vedic AI</h2>
         <div className="pipeline">
           <span>
@@ -2640,9 +2645,9 @@ export default function App() {
               aria-hidden="true"
             />
           ) : null}
-          <nav
+          <aside
             id="mobile-navigation"
-            className={`mobile-nav-drawer${menuOpen ? ' open' : ''}`}
+            className={`mobile-drawer${menuOpen ? ' open' : ''}`}
             aria-label="Mobile navigation"
             aria-hidden={!menuOpen}
           >
@@ -2653,15 +2658,73 @@ export default function App() {
               </div>
               <button
                 className="mobile-drawer-close"
-                onPointerDown={e => spawnRipple(e)}
+                type="button"
+                onPointerDown={e => {
+                  playClick();
+                  spawnRipple(e);
+                }}
                 onClick={() => setMenuOpen(false)}
                 aria-label="Close navigation"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
-            {renderNavItems()}
-          </nav>
+            <div className="mobile-drawer-nav">
+              <p className="drawer-section-label">NAVIGATION // 04 MODULES</p>
+              {nav.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`mobile-drawer-item${tab === item.id ? ' active' : ''}`}
+                  onPointerDown={e => {
+                    playClick();
+                    spawnRipple(e);
+                  }}
+                  onClick={() => {
+                    setTab(item.id);
+                    setMenuOpen(false);
+                  }}
+                >
+                  <span className="drawer-item-index">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="drawer-item-icon"><item.icon size={16} /></span>
+                  <span className="drawer-item-label">{item.label}</span>
+                  <ChevronRight className="drawer-item-arrow" size={14} />
+                </button>
+              ))}
+            </div>
+            <div className="mobile-drawer-foot">
+              <button
+                type="button"
+                className="drawer-engine bg-optical-dots"
+                onPointerDown={e => {
+                  playClick();
+                  spawnRipple(e);
+                }}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setHelpOpen(true);
+                }}
+                aria-label="About GanitaAI's neuro-symbolic architecture"
+              >
+                <span className="drawer-engine-status">
+                  <span className="neuro-led" />
+                  <span>NEURO-SYMBOLIC ENGINE</span>
+                  <ChevronRight size={14} />
+                </span>
+                <span className="drawer-engine-caption">AI perception · deterministic calculations</span>
+              </button>
+              <button
+                type="button"
+                className="drawer-sfx-toggle"
+                onPointerDown={e => spawnRipple(e)}
+                onClick={toggleSfx}
+                aria-label={`${sfxEnabled ? 'Disable' : 'Enable'} sound effects`}
+              >
+                <span className="drawer-sfx-label">SOUND EFFECTS <strong>SFX: {sfxEnabled ? 'ON' : 'OFF'}</strong></span>
+                {sfxEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              </button>
+            </div>
+          </aside>
 
           {tab === 'snap' ? (
             <Home queued={queued} onClearQueued={() => setQueued(null)} />
