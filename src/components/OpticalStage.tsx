@@ -42,12 +42,12 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
     const resize = () => {
       measureCrosshairs();
       dpr = Math.min(window.devicePixelRatio || 1, 2);
-      width = window.innerWidth;
+      width = document.documentElement.clientWidth;
       height = window.innerHeight;
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       requestDraw();
     };
@@ -57,6 +57,7 @@ export default function OpticalStage({ coordRef }: OpticalStageProps) {
     };
 
     const updatePointer = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') return;
       const firstMove = !pointer.active;
       pointer.targetX = event.clientX;
       pointer.targetY = event.clientY;

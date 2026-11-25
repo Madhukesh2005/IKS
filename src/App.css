@@ -742,7 +742,7 @@ h1 {
 
 .comparison {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -779,7 +779,7 @@ h1 {
 
 .standard-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
@@ -802,6 +802,7 @@ h1 {
   font-size: 12.5px;
   color: var(--ink);
   margin-top: 4px;
+  overflow-wrap: anywhere;
 }
 
 .ai-insight-box {
@@ -1569,7 +1570,7 @@ input[type='range'] {
 
 .cipher-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-top: 14px;
 }
@@ -1756,7 +1757,7 @@ input[type='range'] {
 
 .choices {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin: 26px 0;
 }
@@ -1937,28 +1938,9 @@ input[type='range'] {
   .brand {
     min-width: 0;
   }
-  .info-pill span {
-    display: none;
-  }
-  .topbar nav {
-    position: absolute;
-    left: 16px;
-    right: 16px;
-    top: 76px;
-    display: none;
-    flex-direction: column;
-    align-items: stretch;
-    background: var(--surface);
-    box-shadow: var(--shadow-lg);
-    padding: 8px;
-  }
-  .topbar nav.open {
-    display: flex;
-    animation: fadeSlideUp 0.2s var(--ease-spring);
-  }
   .page-grid,
   .lab-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .workspace {
     border-right: 0;
@@ -1972,7 +1954,7 @@ input[type='range'] {
   .tool-grid,
   .choices,
   .cipher-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .steps-panel {
     border-right: 0;
@@ -2029,7 +2011,7 @@ input[type='range'] {
 
 .summary-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(105px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -2263,7 +2245,7 @@ input[type='range'] {
 @media (max-width: 900px) {
   .summary-stats {
     width: 100%;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .review-verse {
     margin-left: 0;
@@ -2832,13 +2814,7 @@ input[type='range'] {
     display: none;
   }
 
-  .info-pill {
-    width: 34px;
-    justify-content: center;
-    padding: 0;
-  }
-
-  .info-pill > span:last-child,
+  .info-pill .neuro-label,
   .sfx-toggle > span {
     display: none;
   }
@@ -2887,7 +2863,7 @@ input[type='range'] {
   .input-card textarea {
     min-height: 108px;
     padding-inline: 16px;
-    font-size: 15px;
+    font-size: 16px;
   }
 
   .quick-prompts {
@@ -3299,7 +3275,7 @@ input[type='range'] {
 
 @media (max-width: 900px) {
   .lab-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .lab-layout main {
@@ -3732,6 +3708,270 @@ input[type='range'] {
   }
 }
 
+html,
+body,
+#root,
+.optical-frame,
+.app-shell {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.optical-frame {
+  min-width: 0;
+}
+
+.mobile-nav-backdrop,
+.mobile-nav-drawer {
+  display: none;
+}
+
+.mobile-drawer-head {
+  display: none;
+}
+
+.brand-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.brand-glyph {
+  display: block;
+  font-family: var(--font-devanagari);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(0.11em);
+}
+
+.neuro-icon {
+  display: none;
+}
+
+.info-pill .neuro-led {
+  display: inline-block;
+  flex: none;
+}
+
+.workspace,
+.insights,
+.lab-layout main,
+.sutra-list,
+.scripture-page,
+.quiz-page,
+.input-card,
+.result-card,
+.loading-card,
+.sutra-quote-card,
+.calculator-card,
+.tool-card,
+.quiz-card,
+.review-card,
+.result-head,
+.result-head > div,
+.result-title-line,
+.steps-panel,
+.compare-panel,
+.step > div,
+.lab-steps > div > div,
+.review-step > div,
+.image-preview-bar,
+.image-meta,
+.ocr-scan {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.result-head h2,
+.sanskrit-ribbon strong,
+.step p,
+.ai-insight-box p,
+.spotlight-formula code,
+.recent button span,
+.tool-note {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.sutra-badge {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.image-meta {
+  flex: 1;
+  overflow: hidden;
+}
+
+.image-meta strong,
+.image-meta span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocr-scan span {
+  max-width: 100%;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.camera-button,
+.quick-prompts button,
+.copy-btn,
+.recent button,
+.info-pill,
+.mobile-menu,
+.sfx-toggle,
+.topbar nav button,
+.mobile-nav-drawer button,
+.detail-close,
+.modal-close,
+.solve-button,
+.next-button,
+.choices button,
+.sutra-tabs button,
+.sutra-item,
+.try-sutra-btn,
+.preset-row button,
+.ai-explain-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .mobile-nav-backdrop {
+    position: fixed;
+    z-index: 50;
+    inset: 0;
+    display: block;
+    background: rgba(9, 9, 11, 0.28);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .mobile-nav-drawer {
+    position: fixed;
+    z-index: 55;
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    width: min(280px, 82vw);
+    max-width: 82vw;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 16px 12px 24px;
+    border-right: 1px solid var(--border-rail);
+    border-radius: 0 14px 14px 0;
+    background: #ffffff;
+    box-shadow: 12px 0 40px rgba(9, 9, 11, 0.14);
+    transform: translateX(-105%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform 280ms var(--ease-spring), visibility 280ms ease;
+  }
+
+  .mobile-nav-drawer.open {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .mobile-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 6px 14px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-rail);
+  }
+
+  .mobile-drawer-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mobile-drawer-brand .brand-name {
+    min-width: 0;
+  }
+
+  .mobile-drawer-close {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    place-items: center;
+    border: 1px solid var(--border-rail);
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--ink);
+  }
+
+  .mobile-nav-drawer > button:not(.mobile-drawer-close) {
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-secondary);
+    text-align: left;
+  }
+
+  .mobile-nav-drawer > button.active {
+    border-left: 2.5px solid var(--saffron);
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  .mobile-nav-drawer .mobile-drawer-close {
+    width: 36px;
+    padding: 0;
+    border: 1px solid var(--border-rail);
+    color: var(--ink);
+  }
+
+  .page-grid,
+  .lab-layout,
+  .solution-layout,
+  .tool-grid,
+  .choices,
+  .cipher-grid,
+  .comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+  }
+
+  .brand-glyph {
+    font-size: 18px;
+    transform: translateY(0.11em);
+  }
+
+}
+
 @media (max-width: 520px) {
   .quiz-head {
     flex-direction: column;
@@ -3751,7 +3991,7 @@ input[type='range'] {
   }
 
   .summary-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .review-method-head {
@@ -4562,5 +4802,62 @@ small {
   .efficiency-bar-row {
     grid-template-columns: minmax(78px, 0.85fr) minmax(32px, 1fr) 26px;
     gap: 7px;
+  }
+}
+
+@media (max-width: 900px) {
+  .topbar > nav {
+    display: none;
+  }
+
+  .info-pill {
+    width: auto;
+    min-width: 44px;
+    height: 34px;
+    padding: 0 9px;
+    gap: 6px;
+  }
+
+  .info-pill .neuro-label {
+    display: none;
+  }
+
+  .info-pill .neuro-led,
+  .info-pill .neuro-icon {
+    display: inline-block;
+    flex: none;
+  }
+
+  .info-pill .neuro-icon {
+    color: var(--ink);
+  }
+
+  .image-preview-bar {
+    max-width: 100%;
+    margin: 12px 14px 0;
+    overflow: hidden;
+  }
+
+  .input-card textarea,
+  .calculator-card input:not([type='range']),
+  .calculator-card select,
+  .search-row input,
+  .scripture-tool input:not([type='range']) {
+    font-size: 16px;
+  }
+
+  .sutra-badge {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.35;
+  }
+}
+
+@media (max-width: 520px) {
+  .input-actions {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }

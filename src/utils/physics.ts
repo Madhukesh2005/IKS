@@ -6,6 +6,7 @@ type SpotlightOptions = { tilt?: boolean };
 export function spawnRipple(event: PointerLikeEvent, dark = false) {
   const target = event.currentTarget;
   if (!(target instanceof HTMLElement)) return;
+  if (getComputedStyle(target).overflow === 'visible') target.style.overflow = 'hidden';
   const rect = target.getBoundingClientRect();
   const ripple = document.createElement('span');
   ripple.className = `optical-ripple${dark ? ' optical-ripple-dark' : ''}`;
@@ -28,6 +29,7 @@ export function spawnRipple(event: PointerLikeEvent, dark = false) {
 export function useSpotlightSurface({ tilt = false }: SpotlightOptions = {}) {
   return {
     onPointerMove(event: ReactPointerEvent<HTMLElement>) {
+      if (event.pointerType === 'touch') return;
       const element = event.currentTarget;
       const rect = element.getBoundingClientRect();
       element.style.setProperty('--mx', `${event.clientX - rect.left}px`);
@@ -60,6 +62,7 @@ export function useMagnetic(maxPull = 5) {
   return {
     onPointerMove(event: ReactPointerEvent<HTMLElement>) {
       if (
+        event.pointerType === 'touch' ||
         window.matchMedia('(pointer: coarse)').matches ||
         window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
         event.currentTarget.matches(':disabled')

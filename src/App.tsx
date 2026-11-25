@@ -2516,6 +2516,29 @@ export default function App() {
     };
   }, [tab]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const mobileViewport = window.matchMedia('(max-width: 900px)');
+    if (!mobileViewport.matches) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    const closeOnDesktop = () => {
+      if (!mobileViewport.matches) setMenuOpen(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    mobileViewport.addEventListener('change', closeOnDesktop);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+      mobileViewport.removeEventListener('change', closeOnDesktop);
+    };
+  }, [menuOpen]);
+
   function toggleSfx() {
     const next = !sfxEnabled;
     setSfxEnabledState(next);
@@ -2528,6 +2551,25 @@ export default function App() {
     setTab('snap');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  const renderNavItems = () => nav.map(item => (
+    <button
+      key={item.id}
+      data-active={tab === item.id}
+      className={tab === item.id ? 'active' : ''}
+      onPointerDown={e => {
+        playClick();
+        spawnRipple(e);
+      }}
+      onClick={() => {
+        setTab(item.id);
+        setMenuOpen(false);
+      }}
+    >
+      <item.icon size={16} />
+      {item.label}
+    </button>
+  ));
 
   return (
     <>
@@ -2551,36 +2593,21 @@ export default function App() {
               }}
               onClick={() => setMenuOpen(value => !value)}
               aria-label="Toggle navigation"
+              aria-expanded={menuOpen}
+              aria-controls="mobile-navigation"
             >
               {menuOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
 
             <div className="brand">
-              <div className="brand-mark">ग</div>
+              <div className="brand-mark"><span className="brand-glyph">ग</span></div>
               <span className="brand-name">
                 Ganita<span>AI</span>
               </span>
             </div>
 
             <nav ref={navRef} className={menuOpen ? 'open' : ''}>
-              {nav.map(item => (
-                <button
-                  key={item.id}
-                  data-active={tab === item.id}
-                  className={tab === item.id ? 'active' : ''}
-                  onPointerDown={e => {
-                    playClick();
-                    spawnRipple(e);
-                  }}
-                  onClick={() => {
-                    setTab(item.id);
-                    setMenuOpen(false);
-                  }}
-                >
-                  <item.icon size={16} />
-                  {item.label}
-                </button>
-              ))}
+              {renderNavItems()}
               <span ref={navUnderlineRef} className="nav-underline" aria-hidden="true" />
             </nav>
 
@@ -2600,10 +2627,41 @@ export default function App() {
                 onClick={() => setHelpOpen(true)}
               >
                 <span className="neuro-led" />
-                <span>NEURO-SYMBOLIC</span>
+                <ShieldCheck aria-hidden="true" className="neuro-icon" size={14} />
+                <span className="neuro-label">NEURO-SYMBOLIC</span>
               </button>
             </div>
           </header>
+
+          {menuOpen ? (
+            <div
+              className="mobile-nav-backdrop"
+              onClick={() => setMenuOpen(false)}
+              aria-hidden="true"
+            />
+          ) : null}
+          <nav
+            id="mobile-navigation"
+            className={`mobile-nav-drawer${menuOpen ? ' open' : ''}`}
+            aria-label="Mobile navigation"
+            aria-hidden={!menuOpen}
+          >
+            <div className="mobile-drawer-head">
+              <div className="mobile-drawer-brand">
+                <div className="brand-mark"><span className="brand-glyph">ग</span></div>
+                <span className="brand-name">Ganita<span>AI</span></span>
+              </div>
+              <button
+                className="mobile-drawer-close"
+                onPointerDown={e => spawnRipple(e)}
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close navigation"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {renderNavItems()}
+          </nav>
 
           {tab === 'snap' ? (
             <Home queued={queued} onClearQueued={() => setQueued(null)} />
